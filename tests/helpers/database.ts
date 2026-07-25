@@ -13,6 +13,14 @@ import { discoverMigrations } from "@/db/migrate";
 
 const MIGRATIONS_DIR = new URL("../../src/db/migrations/", import.meta.url).pathname;
 
+/**
+ * Better Auth's tables (user/session/account) are created in production by our Bun
+ * script `src/db/auth-schema.ts`. Tests apply the same reviewed SQL here so our FK
+ * migration (0007) and any test referencing "user" run against the real
+ * Better-Auth-owned table, not a stub.
+ */
+const BETTER_AUTH_SCHEMA = new URL("../../src/db/better-auth-schema.sql", import.meta.url).pathname;
+
 /** Identifiers cannot be parameterised, so the generated name is validated. */
 const SAFE_IDENTIFIER = /^[a-z][a-z0-9_]{0,62}$/;
 
@@ -60,12 +68,29 @@ export async function createTestSchema(): Promise<TestDatabase> {
   await client.unsafe(`CREATE SCHEMA "${schema}"`);
   await client.unsafe(`SET search_path TO "${schema}"`);
 
+  // Better Auth's tables first — our migration 0007 adds FKs that reference "user".
+  const betterAuthSchema = await Bun.file(BETTER_AUTH_SCHEMA).text();
+  await client.unsafe(`SET search_path TO "${schema}"; ${betterAuthSchema}`);
+
   const migrations = await discoverMigrations(MIGRATIONS_DIR);
   for (const migration of migrations) {
     await client.unsafe(`SET search_path TO "${schema}"; ${migration.sqlText}`);
   }
 
   return { sql: client, schema };
+}
+
+/**
+ * Insert a valid Better Auth `"user"` row. Idempotent (`ON CONFLICT DO NOTHING`),
+ * so callers can seed the same id repeatedly. Needed because our tables now carry
+ * FKs to `"user"` — a fabricated `user_id` is rejected without a backing row.
+ */
+export function insertUser(client: SQL, id: string): Promise<unknown> {
+  return client`
+    INSERT INTO "user" (id, name, email, "emailVerified")
+    VALUES (${id}, ${"Test User"}, ${`${id}@test.local`}, ${false})
+    ON CONFLICT (id) DO NOTHING
+  `;
 }
 
 export async function dropTestSchema(db: TestDatabase): Promise<void> {

@@ -21,8 +21,8 @@
     "verify": "bun run typecheck && bun test",
     "db:migrate": "bun run src/db/migrate.ts",
     "db:seed": "bun run src/db/seed.ts",
-    "auth:schema": "bunx auth generate",
-    "auth:migrate": "bunx auth migrate",
+    "auth:schema": "bun run src/db/auth-schema.ts",
+    "auth:migrate": "bun run src/db/auth-schema.ts --apply",
     "fga:model": "bun run src/authz/push-model.ts",
     "audit": "bun audit",
     "check": "bun run typecheck && bun test && bun audit"

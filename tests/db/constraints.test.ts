@@ -7,24 +7,31 @@
  */
 
 import { test, expect, describe, beforeAll, afterAll } from "bun:test";
-import { withTestSchema, createTestSchema, dropTestSchema, expectRejection, type TestDatabase } from "../helpers/database";
+import { withTestSchema, createTestSchema, dropTestSchema, expectRejection, insertUser, type TestDatabase } from "../helpers/database";
 import { newId } from "@/db/types";
 
 let db: TestDatabase;
 
+const USER_A = "usr_aaaaaaaaaaaaaaaaaaaa";
+const USER_B = "usr_bbbbbbbbbbbbbbbbbbbb";
+
 beforeAll(async () => {
   db = await createTestSchema();
+  // Our tables now FK to "user"; seed the shared fixtures once.
+  await insertUser(db.sql, USER_A);
+  await insertUser(db.sql, USER_B);
 });
 
 afterAll(async () => {
   await dropTestSchema(db);
 });
 
-const USER_A = "usr_aaaaaaaaaaaaaaaaaaaa";
-const USER_B = "usr_bbbbbbbbbbbbbbbbbbbb";
-
-/** Insert an identity, defaulting to a valid verified email. */
-function insertIdentity(overrides: {
+/**
+ * Insert an identity, defaulting to a valid verified email. Ensures the referenced
+ * user exists first — every path here that expects success (including the setup
+ * write before a uniqueness rejection) would otherwise trip fk_identity_user.
+ */
+async function insertIdentity(overrides: {
   userId?: string;
   type?: string;
   value?: string;
@@ -35,12 +42,14 @@ function insertIdentity(overrides: {
 }) {
   const isVerified = overrides.isVerified ?? true;
   const verifiedAt = overrides.verifiedAt !== undefined ? overrides.verifiedAt : isVerified ? new Date() : null;
+  const userId = overrides.userId ?? USER_A;
+  await insertUser(db.sql, userId);
 
   return db.sql`
     INSERT INTO user_identity (id, user_id, type, value, is_primary, is_verified, source, verified_at)
     VALUES (
       ${newId("identity")},
-      ${overrides.userId ?? USER_A},
+      ${userId},
       ${overrides.type ?? "email"},
       ${overrides.value ?? `x${Bun.randomUUIDv7().slice(0, 8)}@example.com`},
       ${overrides.isPrimary ?? false},
@@ -249,10 +258,12 @@ describe("user_product_access — vendor scoping", () => {
     await db.sql`INSERT INTO vendor (id, name) VALUES (${vendorId}, ${"Scope Test Co"})`;
   });
 
-  function insertAccess(role: string, vendor: string | null, status = "active", revokedAt: Date | null = null) {
+  async function insertAccess(role: string, vendor: string | null, status = "active", revokedAt: Date | null = null) {
+    const userId = `usr_${role}_${status}`;
+    await insertUser(db.sql, userId);
     return db.sql`
       INSERT INTO user_product_access (id, user_id, product_id, role, vendor_id, status, revoked_at)
-      VALUES (${newId("access")}, ${`usr_${role}_${status}`}, ${"masterclass"}, ${role},
+      VALUES (${newId("access")}, ${userId}, ${"masterclass"}, ${role},
               ${vendor}, ${status}, ${revokedAt})
     `;
   }
@@ -287,6 +298,7 @@ describe("user_product_access — vendor scoping", () => {
   });
 
   test("rejects an unknown product", async () => {
+    await insertUser(db.sql, "usr_p");
     await expectRejection(
       () => db.sql`
         INSERT INTO user_product_access (id, user_id, product_id, role)
@@ -308,6 +320,7 @@ describe("user_product_access — vendor scoping", () => {
 
   test("rejects a duplicate user/product/role triple", async () => {
     const user = "usr_dup_access";
+    await insertUser(db.sql, user);
     await db.sql`
       INSERT INTO user_product_access (id, user_id, product_id, role)
       VALUES (${newId("access")}, ${user}, ${"lms"}, ${"CPA"})
@@ -409,10 +422,64 @@ describe("outbox", () => {
   });
 });
 
+describe("referential integrity — our tables FK to \"user\" (migration 0007)", () => {
+  // A row pointing at a user that does not exist is an orphan the alias model must
+  // never allow — the FK, not the writer, is the last line of defence.
+  test("rejects an identity whose user_id has no user row", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO user_identity (id, user_id, type, value, is_primary, is_verified, source, verified_at)
+        VALUES (${newId("identity")}, ${"usr_ghost_no_row"}, ${"email"}, ${"ghost@example.com"},
+                ${false}, ${true}, ${"self"}, ${new Date()})
+      `,
+      "fk_identity_user",
+    );
+  });
+
+  test("rejects an access row whose user_id has no user row", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO user_product_access (id, user_id, product_id, role)
+        VALUES (${newId("access")}, ${"usr_ghost_no_row"}, ${"lms"}, ${"NORMAL"})
+      `,
+      "fk_access_user",
+    );
+  });
+
+  test("rejects a merge-log row referencing a missing user", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO identity_merge_log (id, survivor_user_id, merged_user_id, tier, evidence, actor)
+        VALUES (${newId("merge")}, ${USER_A}, ${"usr_ghost_no_row"}, ${"A"}, ${"{}"}, ${"system"})
+      `,
+      "fk_merge_merged",
+    );
+  });
+
+  // Users are never hard-deleted in production, but the cascade is the schema's
+  // promise: deleting a user takes its identities with it, never leaving orphans.
+  test("cascades a user's identities when the user is deleted", async () => {
+    const uid = "usr_cascade_test";
+    await insertUser(db.sql, uid);
+    await insertIdentity({ userId: uid, value: "cascade@example.com" });
+
+    await db.sql`DELETE FROM "user" WHERE id = ${uid}`;
+
+    const rows = (await db.sql`
+      SELECT count(*)::int AS n FROM user_identity WHERE user_id = ${uid}
+    `) as { n: number }[];
+    expect(rows[0]?.n).toBe(0);
+  });
+});
+
 describe("schema shape", () => {
   test("creates exactly the tables this service owns", async () => {
+    // Excludes the Better-Auth-owned tables (user/session/account) the harness
+    // seeds, so this still describes exactly what OUR migrations create.
     const rows = (await db.sql`
-      SELECT tablename FROM pg_tables WHERE schemaname = ${db.schema} ORDER BY tablename
+      SELECT tablename FROM pg_tables
+      WHERE schemaname = ${db.schema} AND tablename NOT IN ('user', 'session', 'account')
+      ORDER BY tablename
     `) as { tablename: string }[];
 
     expect(rows.map(r => r.tablename)).toEqual([
@@ -450,7 +517,8 @@ describe("schema shape", () => {
   test("a fresh schema can be created and dropped independently", async () => {
     const tables = await withTestSchema(async other => {
       const rows = (await other.sql`
-        SELECT count(*)::int AS n FROM pg_tables WHERE schemaname = ${other.schema}
+        SELECT count(*)::int AS n FROM pg_tables
+        WHERE schemaname = ${other.schema} AND tablename NOT IN ('user', 'session', 'account')
       `) as { n: number }[];
       return rows[0]?.n ?? 0;
     });

@@ -13,6 +13,7 @@ import { MigrationError } from "@/lib/errors";
 import { testDatabaseUrl } from "../helpers/database";
 
 const REAL_MIGRATIONS = new URL("../../src/db/migrations/", import.meta.url).pathname;
+const BETTER_AUTH_SCHEMA = new URL("../../src/db/better-auth-schema.sql", import.meta.url).pathname;
 
 const tempDirs: string[] = [];
 let dirCounter = 0;
@@ -39,9 +40,9 @@ describe("discoverMigrations", () => {
   test("finds the real migrations in filename order", async () => {
     const migrations = await discoverMigrations(REAL_MIGRATIONS);
 
-    expect(migrations.map(m => m.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006"]);
+    expect(migrations.map(m => m.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
     expect(migrations[0]?.name).toBe("0001_schema_migration.sql");
-    expect(migrations[5]?.name).toBe("0006_outbox.sql");
+    expect(migrations[6]?.name).toBe("0007_add_user_foreign_keys.sql");
   });
 
   test("computes a stable sha256 checksum", async () => {
@@ -110,9 +111,22 @@ describe("migrate()", () => {
     const admin = new SQL(testDatabaseUrl(), { max: 2 });
     await admin.unsafe(`CREATE SCHEMA "${schema}"`);
 
+    // Better Auth's tables must exist before our migration 0007 adds FKs to "user".
+    // Applied via `admin`, deliberately NOT via `client`: `client`'s first statement
+    // must be the migrate runner's `pg_advisory_lock` so the lock and its unlock land
+    // on the same pooled connection. Warming `client` with the schema first can split
+    // them across connections and leak the lock into the next test.
+    await admin.unsafe(`SET search_path TO "${schema}"; ${await Bun.file(BETTER_AUTH_SCHEMA).text()}`);
+
     // A dedicated client pinned to the schema. `options` on the connection string
     // sets search_path for every connection in this pool, including new ones.
-    const client = new SQL(`${testDatabaseUrl()}?options=-c%20search_path%3D${schema}`, { max: 2 });
+    //
+    // max: 1 is deliberate. The runner takes a SESSION-level pg_advisory_lock and
+    // releases it in a finally; on a multi-connection pool the lock and unlock can
+    // land on different connections, leaking the lock for the life of the process.
+    // The one-shot `db:migrate` process is immune (it exits immediately), but this
+    // long-lived test process is not — a single connection guarantees they pair up.
+    const client = new SQL(`${testDatabaseUrl()}?options=-c%20search_path%3D${schema}`, { max: 1 });
 
     try {
       return await fn({ client, schema, migrate: runMigrate });
@@ -127,16 +141,20 @@ describe("migrate()", () => {
     await withSchema(async ({ client, schema }) => {
       const result = await runMigrate({ client, dir: REAL_MIGRATIONS });
 
-      expect(result.applied).toHaveLength(6);
+      expect(result.applied).toHaveLength(7);
       expect(result.skipped).toHaveLength(0);
 
       const rows = (await client`SELECT version FROM schema_migration ORDER BY version`) as {
         version: string;
       }[];
-      expect(rows.map(r => r.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006"]);
+      expect(rows.map(r => r.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
 
+      // Excludes the Better-Auth-owned tables the harness seeds — this asserts what
+      // OUR runner created.
       const tables = (await client`
-        SELECT tablename FROM pg_tables WHERE schemaname = ${schema} ORDER BY tablename
+        SELECT tablename FROM pg_tables
+        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account')
+        ORDER BY tablename
       `) as { tablename: string }[];
       expect(tables.map(t => t.tablename)).toEqual([
         "identity_merge_log",
@@ -155,10 +173,10 @@ describe("migrate()", () => {
       const second = await runMigrate({ client, dir: REAL_MIGRATIONS });
 
       expect(second.applied).toEqual([]);
-      expect(second.skipped).toHaveLength(6);
+      expect(second.skipped).toHaveLength(7);
 
       const rows = (await client`SELECT count(*)::int AS n FROM schema_migration`) as { n: number }[];
-      expect(rows[0]?.n).toBe(6);
+      expect(rows[0]?.n).toBe(7);
     });
   });
 
@@ -166,12 +184,14 @@ describe("migrate()", () => {
     await withSchema(async ({ client, schema }) => {
       const dry = await runMigrate({ client, dir: REAL_MIGRATIONS, dryRun: true });
 
-      expect(dry.pending).toHaveLength(6);
+      expect(dry.pending).toHaveLength(7);
       expect(dry.applied).toEqual([]);
 
-      // 0001 is IF NOT EXISTS and is applied to read state, so only the ledger exists.
+      // 0001 is IF NOT EXISTS and is applied to read state, so only the ledger exists
+      // among OUR tables (the harness-seeded Better Auth tables are excluded).
       const tables = (await client`
-        SELECT tablename FROM pg_tables WHERE schemaname = ${schema}
+        SELECT tablename FROM pg_tables
+        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account')
       `) as { tablename: string }[];
       expect(tables.map(t => t.tablename)).toEqual(["schema_migration"]);
     });

@@ -1,8 +1,8 @@
 /**
  * Entry point. Routes only — no business logic (AGENTS.md, architecture rules).
  *
- * Step 1 mounts liveness and readiness. The Better Auth catch-all at
- * `/api/auth/*` arrives in step 3; identity routes in step 4.
+ * Step 1 mounts liveness and readiness. Step 3 adds the Better Auth catch-all at
+ * `/api/auth/*` (sign-up, sign-in, sessions). Identity routes arrive in step 4.
  */
 
 import { loadConfigOrExit, redactedSummary } from "@/lib/config";
@@ -10,6 +10,7 @@ import { log } from "@/lib/logger";
 import { errorResponse } from "@/lib/errors";
 import { closeRedis } from "@/lib/redis";
 import { healthResponse, readyHandler } from "@/routes/health";
+import { auth } from "@/auth";
 
 // Fails fast and exits 1 on invalid configuration, before a port is bound.
 const config = loadConfigOrExit();
@@ -20,6 +21,10 @@ const server = Bun.serve({
   routes: {
     "/health": healthResponse,
     "/ready": { GET: readyHandler },
+
+    // Better Auth owns everything under /api/auth. No handler of ours goes inside
+    // this prefix (AGENTS.md API contracts). More-specific routes above still win.
+    "/api/auth/*": (req) => auth.handler(req),
   },
 
   // Unmatched paths.
