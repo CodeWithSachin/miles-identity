@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+
+# Bun
+.bun/
+bun.lockb
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Env — .env.example is committed, real values are not
+.env
+.env.*
+!.env.example
+
+# Secrets — belt and braces
+*.pem
+*.key
+*.p12
+*.jks
+jwks.json
+sso-provider*.json
+
+# Coverage / test output
+coverage/
+
+# Logs
+*.log
+logs/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Local database dumps — may contain real user data
+*.sql.gz
+*.dump
+dumps/
+
+# FUSE mount artefacts (session filesystem, never real project files)
+.fuse_hidden*

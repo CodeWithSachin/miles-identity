@@ -1,0 +1,53 @@
+{
+  "name": "miles-identity",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Centralised OAuth 2.1 / OIDC identity provider for LMS, Miles One, Miles Masterclass and Salesforce. Bun-native.",
+  "type": "module",
+  "module": "src/index.ts",
+  "engines": {
+    "bun": ">=1.3.14"
+  },
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts",
+    "build": "bun build src/index.ts --target=bun --outdir=dist --minify --sourcemap",
+    "compile": "bun build src/index.ts --compile --target=bun --outfile=dist/miles-identity",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "test:db": "TEST_DATABASE_URL=\"${TEST_DATABASE_URL:-postgres://$USER@localhost:5432/miles_identity_test}\" bun test tests/db",
+    "verify": "bun run typecheck && bun test",
+    "db:migrate": "bun run src/db/migrate.ts",
+    "db:seed": "bun run src/db/seed.ts",
+    "auth:schema": "bunx auth generate",
+    "auth:migrate": "bunx auth migrate",
+    "fga:model": "bun run src/authz/push-model.ts",
+    "audit": "bun audit",
+    "check": "bun run typecheck && bun test && bun audit"
+  },
+  "dependencies": {
+    "better-auth": "1.6.25",
+    "@better-auth/oauth-provider": "1.6.25",
+    "@better-auth/sso": "1.6.25",
+    "@openfga/sdk": "0.9.6",
+    "pg": "8.22.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "auth": "1.6.25",
+    "@types/bun": "1.3.14",
+    "@types/pg": "8.20.0",
+    "typescript": "7.0.2"
+  },
+  "overridesReason": "Transitive advisory fixes. axios: pinned to 1.16.0 by @openfga/sdk, inside the <1.18.0 range. drizzle-orm: pulled in as an optional peer of better-auth; we never import it (AGENTS.md forbids an ORM) but <0.45.2 carries a SQL-injection advisory. lodash: reached only via the auth CLI's Prisma schema parser, which we do not use. Re-check all three on every dependency bump — see prompts/001-config-skeleton.md.",
+  "overrides": {
+    "axios": "1.18.1",
+    "drizzle-orm": "0.45.2",
+    "lodash": "4.18.1"
+  },
+  "trustedDependencies": [
+    "pg"
+  ]
+}

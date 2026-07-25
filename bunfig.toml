@@ -1,0 +1,17 @@
+# Bun configuration — https://bun.com/docs/runtime/bunfig
+
+# Isolated installs (pnpm-style strict dependency isolation).
+# Stops phantom-dependency bugs where code imports a transitive package.
+linker = "isolated"
+
+[install]
+exact = true            # lockstep versions; no silent minor drift in an auth service
+saveTextLockfile = true # bun.lock as text, so lockfile diffs are reviewable in PRs
+
+[test]
+coverage = true
+coverageThreshold = { line = 0.8, function = 0.8 }
+# Alias resolution, token issuance and merge logic must not regress silently.
+
+[run]
+bun = true # `bun run` uses Bun for package scripts, never Node
