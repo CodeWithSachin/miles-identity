@@ -11,6 +11,12 @@
 export const OTP_LENGTH = 6;
 
 /**
+ * The fixed code used when `DEV_OTP_BYPASS` is enabled (unrepresentable in
+ * production — see src/lib/config.ts). Public and documented, not a secret.
+ */
+export const DEV_OTP_CODE = "000000";
+
+/**
  * A cryptographically-random numeric OTP, zero-padded to `length`. Rejection
  * sampling drops the tail of the u32 range that would bias the low digits — a
  * negligible skew for a 6-digit code, but avoiding it is one extra line, not

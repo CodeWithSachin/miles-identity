@@ -38,11 +38,16 @@ export type StartDeps = {
   store: OtpStore;
   senders: { email: Sender; sms: Sender };
   ttlSeconds?: number;
+  /** Dev-only fixed code (DEV_OTP_BYPASS, unrepresentable in production — see
+   * src/lib/config.ts). When set, it replaces the random code AND the sender is
+   * never called, so a dev box needs no working email/SMS gateway. */
+  devOtp?: string | undefined;
 };
 
-/** `sent` on a verified hit, `noop` for a miss or an unclassifiable handle. The
- * caller (plugin) returns the SAME body regardless — the outcome is for logging. */
-export type StartOutcome = "sent" | "noop";
+/** `sent` on a verified hit, `noop` for a miss or an unclassifiable handle,
+ * `dev_bypass` when the fixed dev code was used instead of sending. The caller
+ * (plugin) returns the SAME body regardless — the outcome is for logging. */
+export type StartOutcome = "sent" | "noop" | "dev_bypass";
 
 const DEFAULT_TTL_SECONDS = 300;
 const DEFAULT_MAX_ATTEMPTS = 3;
@@ -56,13 +61,18 @@ export async function startOtpSignin(handle: string, deps: StartDeps): Promise<S
   const userId = await deps.resolveUser(parsed);
   if (!userId) return "noop";
 
-  const otp = generateOtp();
+  const otp = deps.devOtp ?? generateOtp();
   const expiresAt = new Date(Date.now() + (deps.ttlSeconds ?? DEFAULT_TTL_SECONDS) * 1000);
   await deps.store.create(
     otpIdentifier(parsed.type, parsed.value),
     JSON.stringify({ hash: await hashOtp(otp), attempts: 0 }),
     expiresAt,
   );
+
+  // Dev bypass: the code is fixed and already stored above, so verify still works.
+  // The sender is never called — no gateway, no possibility of leaking the fixed
+  // code onto a real SMS/email provider's logs.
+  if (deps.devOtp !== undefined) return "dev_bypass";
 
   // The OTP goes to the handle the user TYPED. Fire-and-forget so send latency is
   // not an existence oracle and a slow gateway does not stall the response; a

@@ -20,7 +20,12 @@ import { resolveHandle } from "@/identity/resolve";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { log } from "@/lib/logger";
 
-const bodySchema = z.object({ handle: z.string().min(1).max(320) });
+// Exported: the same objects the Scalar spec derives from (src/routes/docs.ts) —
+// one definition, not a parallel one. See .agents/skills/scalar-api-docs.md.
+export const bodySchema = z.object({ handle: z.string().min(1).max(320) });
+export const responseSchema = z.object({
+  methods: z.array(z.enum(["email_otp", "sms_otp", "password"])),
+});
 
 // Fixed-window policy. Per-handle bounds scanning one handle; per-IP bounds
 // scanning many from one source. Constants, not config: they do not vary per
@@ -67,5 +72,5 @@ export async function resolveRoute(
   }
 
   log.info("identity_resolve", { handleType, outcome: "ok" });
-  return Response.json(resolveHandle(parsed), { headers: NO_STORE });
+  return Response.json(responseSchema.parse(resolveHandle(parsed)), { headers: NO_STORE });
 }

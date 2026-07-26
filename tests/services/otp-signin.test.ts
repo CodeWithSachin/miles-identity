@@ -96,6 +96,28 @@ describe("startOtpSignin", () => {
   // A failing gateway must not surface (that would leak existence) nor reject the
   // caller: the code is stored, the outcome is still "sent", the rejection is
   // swallowed and logged.
+  // DEV_OTP_BYPASS (unrepresentable in production — src/lib/config.ts): the fixed
+  // code replaces the random one and the gateway is never touched.
+  test("devOtp uses the fixed code and never calls the sender", async () => {
+    const store = memStore();
+    const send = senders();
+    const outcome = await startOtpSignin("user@example.com", {
+      resolveUser: resolveTo(GLOBAL_ID),
+      store,
+      senders: send,
+      devOtp: "000000",
+    });
+    expect(outcome).toBe("dev_bypass");
+    expect(send.email).not.toHaveBeenCalled();
+    expect(send.sms).not.toHaveBeenCalled();
+
+    const result = await verifyOtpSignin("user@example.com", "000000", {
+      resolveUser: resolveTo(GLOBAL_ID),
+      store,
+    });
+    expect(result).toEqual({ ok: true, userId: GLOBAL_ID });
+  });
+
   test("a send failure does not surface — outcome is still sent, code still stored", async () => {
     const store = memStore();
     const failing = {

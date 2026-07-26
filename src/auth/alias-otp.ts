@@ -30,6 +30,9 @@ import { log } from "@/lib/logger";
 export type AliasOtpOptions = {
   sendEmailOtp: Sender;
   sendSmsOtp: Sender;
+  /** Set only when DEV_OTP_BYPASS is enabled (unrepresentable in production —
+   * see src/lib/config.ts). Threaded straight into startOtpSignin's deps. */
+  devOtp?: string | undefined;
 };
 
 // Mirrors the /resolve limiter (routes/identity.ts). Per-handle is the load-bearing
@@ -85,6 +88,9 @@ export function verificationStore(internalAdapter: {
 export function aliasOtp(options: AliasOtpOptions) {
   return {
     id: "alias-otp",
+    // Stored like Better Auth's own plugins (jwt, oauth-provider, open-api) do,
+    // so wiring is inspectable the same way in tests/auth/instance.test.ts.
+    options,
     endpoints: {
       /**
        * POST /api/auth/sign-in/otp/start — send a sign-in OTP to the typed handle.
@@ -117,6 +123,7 @@ export function aliasOtp(options: AliasOtpOptions) {
             resolveUser: (p) => resolveVerifiedUser(p),
             store: verificationStore(ctx.context.internalAdapter),
             senders: { email: options.sendEmailOtp, sms: options.sendSmsOtp },
+            devOtp: options.devOtp,
           });
 
           log.info("otp_start", { handleType, outcome });

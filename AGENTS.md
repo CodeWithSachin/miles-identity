@@ -118,6 +118,7 @@ Bun is the runtime, the package manager, the test runner, the bundler and the da
 | Vendor SSO | `@better-auth/sso` | passport-saml, samlify |
 | Authorization | `@openfga/sdk` | casbin, accesscontrol, hand-rolled permission tables |
 | Validation | `zod` | joi, yup, ajv, class-validator |
+| API documentation | **Scalar** + `openAPI()` plugin, spec from `z.toJSONSchema()` | Swagger UI, Redoc, RapiDoc, hand-written `openapi.yaml`, `@asteasolutions/zod-to-openapi`, swagger-jsdoc |
 
 **The one unavoidable exception.** Better Auth talks to Postgres through Kysely, which needs a `pg` `Pool`. `Bun.sql` is not a supported Better Auth adapter. So:
 
@@ -256,6 +257,8 @@ Non-negotiable. Applies to every route without being restated.
 10. Never log a token, OTP, password, hash, or full phone number. Log the user id.
 11. Salesforce provisioning creates `status='invited'` users with **unverified** identities. Lead conversion is not identity verification.
 12. Every `/api/admin/*` and `/api/internal/*` route needs an explicit authorization check in the handler. There is no implicit default.
+13. **The API reference and the OpenAPI spec are never publicly reachable in production**, and `/api/internal/*` is never documented at all. A reference with a "Try it" console on an identity provider is an attack surface. See `.agents/skills/scalar-api-docs.md`.
+14. **A dev-only auth shortcut must be unrepresentable in production**, not merely discouraged. Any flag that weakens authentication — a fixed OTP, a returned OTP, a bypass — is rejected by config validation when `NODE_ENV=production`, so the process refuses to start rather than starting insecure.
 
 ---
 

@@ -11,6 +11,7 @@ import { errorResponse } from "@/lib/errors";
 import { closeRedis } from "@/lib/redis";
 import { healthResponse, readyHandler } from "@/routes/health";
 import { resolveRoute } from "@/routes/identity";
+import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
 
 // Fails fast and exits 1 on invalid configuration, before a port is bound.
@@ -20,6 +21,10 @@ const server = Bun.serve({
   port: config.PORT,
 
   routes: {
+    // Never mounted in production at all — see src/routes/docs.ts and
+    // .agents/skills/scalar-api-docs.md.
+    ...docsRoutes(config.NODE_ENV),
+
     "/health": healthResponse,
     "/ready": { GET: readyHandler },
 

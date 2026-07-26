@@ -23,13 +23,14 @@
  */
 
 import { betterAuth } from "better-auth";
-import { jwt } from "better-auth/plugins";
+import { jwt, openAPI } from "better-auth/plugins";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { Pool } from "pg";
 import { getConfig, requireLater } from "@/lib/config";
 import { aliasOtp } from "@/auth/alias-otp";
 import { sendEmailOtp } from "@/integrations/email";
 import { sendSmsOtp } from "@/integrations/sms";
+import { DEV_OTP_CODE } from "@/services/otp";
 
 const config = getConfig();
 
@@ -74,8 +75,13 @@ export const auth = betterAuth({
   // 2–3x on /get-session by joining session+user in one query. Kysely/pg supports it.
   experimental: { joins: true },
 
-  // The OAuth equivalent of Better Auth's own /token is /oauth2/token.
-  disabledPaths: ["/token"],
+  // The OAuth equivalent of Better Auth's own /token is /oauth2/token. In
+  // production, also disable the openAPI() plugin's raw schema route: unlike the
+  // HTML reference, `disableDefaultReference` does NOT gate this path, and the
+  // spec being publicly fetchable would violate security rule 13 the same as the
+  // reference page would.
+  disabledPaths:
+    config.NODE_ENV === "production" ? ["/token", "/open-api/generate-schema"] : ["/token"],
 
   emailAndPassword: {
     enabled: true,
@@ -85,7 +91,18 @@ export const auth = betterAuth({
   plugins: [
     // Passwordless sign-in wired to the alias resolver. Adds no Better Auth table —
     // it reuses the existing `verification` store for OTP state. See alias-otp.ts.
-    aliasOtp({ sendEmailOtp, sendSmsOtp }),
+    // devOtp is only ever set outside production — DEV_OTP_BYPASS is rejected by
+    // config validation whenever NODE_ENV=production (security rule 14).
+    aliasOtp({
+      sendEmailOtp,
+      sendSmsOtp,
+      devOtp: config.DEV_OTP_BYPASS ? DEV_OTP_CODE : undefined,
+    }),
+
+    // Scalar's reference/spec for our own routes lives at src/routes/docs.ts; this
+    // is Better Auth's own half, covering /api/auth/* including alias-otp's
+    // endpoints. Never exposed in production — see .agents/skills/scalar-api-docs.md.
+    openAPI({ disableDefaultReference: config.NODE_ENV === "production" }),
 
     // RS256 per docs/architecture-plan.md §3.3 — the library default is EdDSA.
     // disableSettingJwtHeader: recommended whenever an OAuth provider plugin is

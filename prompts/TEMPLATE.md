@@ -66,6 +66,17 @@ Restated for **this** task, not a pointer to the skill file.
 - Layer 3 (conditions) changes
 - `None` if nothing changes
 
+## API documentation impact
+
+Required whenever an endpoint is added, changed or removed. See `.agents/skills/scalar-api-docs.md`.
+
+- Routes added / changed / removed
+- The zod schemas the spec derives from (request and response) — one definition, not a parallel one
+- Auth requirement per route, and the security scheme it maps to
+- Public / admin-only / internal-and-undocumented
+- Error responses, described honestly — including any deliberately indistinct ones
+- `None` if no endpoint changed
+
 ## Bun-native check
 
 Confirm no dependency was added for something Bun provides. If a new dependency **is** proposed, name it, name what it does, and justify it against the stack table in AGENTS.md.
@@ -92,6 +103,7 @@ Named tests, including the **negative** cases. See `.agents/skills/testing-and-c
 - [ ] `bun test`
 - [ ] `bun audit`
 - [ ] `bun run db:migrate` on a staging clone _(if migrations changed)_
+- [ ] the changed route appears correctly in the Scalar reference _(if endpoints changed)_
 
 ## How to verify it
 

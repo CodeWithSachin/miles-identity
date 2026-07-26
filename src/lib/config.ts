@@ -114,6 +114,12 @@ const tier2 = {
 	SMS_PROVIDER_API_KEY: nonEmpty,
 	SMS_SENDER_ID: nonEmpty,
 
+	// Sign-in OTP becomes a fixed code and the email/SMS gateway is never called —
+	// lets a dev box test sign-in without a working provider. Security rule 14: a
+	// dev auth shortcut must be unrepresentable in production, so this is rejected
+	// below, not merely discouraged, whenever NODE_ENV=production.
+	DEV_OTP_BYPASS: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
+
 	SALESFORCE_INSTANCE_URL: httpUrl,
 	SALESFORCE_CLIENT_ID: nonEmpty,
 	SALESFORCE_CLIENT_SECRET: nonEmpty,
@@ -125,10 +131,17 @@ const tier2 = {
 	GOOGLE_CLIENT_SECRET: nonEmpty,
 } as const;
 
-const schema = z.object({
-	...tier1,
-	...z.object(tier2).partial().shape,
-});
+const schema = z
+	.object({
+		...tier1,
+		...z.object(tier2).partial().shape,
+	})
+	// The one cross-field rule in this schema: a dev-only auth shortcut must be
+	// unrepresentable in production, not merely discouraged (security rule 14).
+	.refine((data) => !(data.DEV_OTP_BYPASS && data.NODE_ENV === "production"), {
+		message: "must not be enabled when NODE_ENV=production",
+		path: ["DEV_OTP_BYPASS"],
+	});
 
 export type Config = z.infer<typeof schema>;
 export type Tier2Key = keyof typeof tier2;

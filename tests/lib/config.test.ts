@@ -127,6 +127,43 @@ describe("parseConfig", () => {
   });
 });
 
+describe("DEV_OTP_BYPASS", () => {
+  test("defaults to false", () => {
+    const result = parseConfig(VALID);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("unreachable");
+    expect(result.value.DEV_OTP_BYPASS).toBe(false);
+  });
+
+  test("parses true and false", () => {
+    const trueResult = parseConfig(withEnv({ DEV_OTP_BYPASS: "true" }));
+    expect(trueResult.ok).toBe(true);
+    if (!trueResult.ok) throw new Error("unreachable");
+    expect(trueResult.value.DEV_OTP_BYPASS).toBe(true);
+
+    const falseResult = parseConfig(withEnv({ DEV_OTP_BYPASS: "false" }));
+    expect(falseResult.ok).toBe(true);
+    if (!falseResult.ok) throw new Error("unreachable");
+    expect(falseResult.value.DEV_OTP_BYPASS).toBe(false);
+  });
+
+  // Security rule 14: a dev auth shortcut must be unrepresentable in production,
+  // not merely discouraged — this is the negative test that proves it.
+  test("rejects DEV_OTP_BYPASS=true when NODE_ENV=production", () => {
+    const messages = issuesFor(withEnv({ DEV_OTP_BYPASS: "true", NODE_ENV: "production" }));
+    expect(messages.join("\n")).toContain("DEV_OTP_BYPASS");
+  });
+
+  test("allows DEV_OTP_BYPASS=true under development and test", () => {
+    expect(parseConfig(withEnv({ DEV_OTP_BYPASS: "true", NODE_ENV: "development" })).ok).toBe(true);
+    expect(parseConfig(withEnv({ DEV_OTP_BYPASS: "true", NODE_ENV: "test" })).ok).toBe(true);
+  });
+
+  test("allows DEV_OTP_BYPASS=false under production", () => {
+    expect(parseConfig(withEnv({ DEV_OTP_BYPASS: "false", NODE_ENV: "production" })).ok).toBe(true);
+  });
+});
+
 describe("secret handling", () => {
   // SECURITY: a config validation error must never echo the received value.
   test("never includes a received secret value in a validation error", () => {

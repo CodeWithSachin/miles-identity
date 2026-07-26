@@ -199,6 +199,27 @@ describe("oauth provider wiring", () => {
   });
 });
 
+describe("openAPI plugin wiring", () => {
+  test("registers the openAPI plugin", () => {
+    expect(findPlugin("open-api")).toBeDefined();
+  });
+
+  // NODE_ENV=test in this suite (bun test's default) — never production, so the
+  // default reference must stay enabled here.
+  test("does not disable the default reference outside production", () => {
+    expect(findPlugin("open-api").options.disableDefaultReference).toBe(false);
+  });
+});
+
+describe("alias-otp devOtp wiring", () => {
+  // DEV_OTP_BYPASS is unset in this suite's env, so config.DEV_OTP_BYPASS is
+  // false and devOtp must not be wired — a dev shortcut must be unrepresentable
+  // unless explicitly and validly configured (security rule 14).
+  test("devOtp is undefined when DEV_OTP_BYPASS is unset", () => {
+    expect(findPlugin("alias-otp").options.devOtp).toBeUndefined();
+  });
+});
+
 describe("oauthClientSecretHasher", () => {
   test("hashes with argon2id and verifies round-trip, same primitive as passwordHasher", async () => {
     const secret = "a-trusted-client-secret";
