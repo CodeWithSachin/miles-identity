@@ -22,6 +22,12 @@
 import { z } from "zod";
 import { bodySchema, responseSchema } from "@/routes/identity";
 import { bodySchema as adminAccessBodySchema, responseSchema as adminAccessResponseSchema } from "@/routes/admin/access";
+import {
+  createVendorBodySchema,
+  registerProviderBodySchema,
+  registerProviderResponseSchema,
+  vendorResponseSchema,
+} from "@/routes/admin/vendors";
 
 /** Mirrors src/services/health.ts's `Readiness` type. That boundary has no zod
  * schema of its own (no request body to validate), so this is docs-only. */
@@ -96,6 +102,80 @@ export function buildOpenApiSpec(): object {
             "401": { description: "No session" },
             "403": { description: "Session present, but not an ADMIN for this product_id" },
             "404": { description: "Target user not found, or no active row to revoke" },
+          },
+        },
+      },
+      "/api/admin/vendors": {
+        post: {
+          summary: "Create a vendor for inbound SSO (admin only)",
+          security: [{ session: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: z.toJSONSchema(createVendorBodySchema) } },
+          },
+          responses: {
+            "200": {
+              description: "The created vendor row, status \"pending\".",
+              content: { "application/json": { schema: z.toJSONSchema(vendorResponseSchema) } },
+            },
+            "400": { description: "Invalid request body" },
+            "401": { description: "No session" },
+            "403": { description: "Session present, but not an ADMIN for masterclass" },
+          },
+        },
+      },
+      "/api/admin/vendors/{vendorId}/sso-provider": {
+        post: {
+          summary: "Register (or re-register) a vendor's Better Auth SSO provider (admin only)",
+          security: [{ session: [] }],
+          parameters: [{ name: "vendorId", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: z.toJSONSchema(registerProviderBodySchema) } },
+          },
+          responses: {
+            "200": {
+              description: "The DNS TXT record to publish before verify-domain can succeed.",
+              content: { "application/json": { schema: z.toJSONSchema(registerProviderResponseSchema) } },
+            },
+            "400": { description: "Invalid body, or neither/both of oidcConfig and samlConfig supplied" },
+            "401": { description: "No session" },
+            "403": { description: "Session present, but not an ADMIN for masterclass" },
+            "404": { description: "Vendor not found" },
+          },
+        },
+      },
+      "/api/admin/vendors/{vendorId}/verify-domain": {
+        post: {
+          summary: "Trigger Better Auth's DNS TXT lookup and activate the vendor on success (admin only)",
+          security: [{ session: [] }],
+          parameters: [{ name: "vendorId", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": {
+              description: "The vendor row, now \"active\" with domain_verified_at set.",
+              content: { "application/json": { schema: z.toJSONSchema(vendorResponseSchema) } },
+            },
+            "400": { description: "Vendor has no registered SSO provider to verify" },
+            "401": { description: "No session" },
+            "403": { description: "Session present, but not an ADMIN for masterclass" },
+            "404": { description: "Vendor or SSO provider not found" },
+            "502": { description: "The DNS TXT record could not be found" },
+          },
+        },
+      },
+      "/api/admin/vendors/{vendorId}/disable": {
+        post: {
+          summary: "Disable a vendor: deletes its SSO provider so every future sign-in fails closed (admin only)",
+          security: [{ session: [] }],
+          parameters: [{ name: "vendorId", in: "path", required: true, schema: { type: "string" } }],
+          responses: {
+            "200": {
+              description: "The vendor row, now \"disabled\".",
+              content: { "application/json": { schema: z.toJSONSchema(vendorResponseSchema) } },
+            },
+            "401": { description: "No session" },
+            "403": { description: "Session present, but not an ADMIN for masterclass" },
+            "404": { description: "Vendor not found" },
           },
         },
       },

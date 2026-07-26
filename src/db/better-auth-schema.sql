@@ -37,3 +37,5 @@ create index "oauthAccessToken_refreshId_idx" on "oauthAccessToken" ("refreshId"
 create index "oauthConsent_clientId_idx" on "oauthConsent" ("clientId");
 
 create index "oauthConsent_userId_idx" on "oauthConsent" ("userId");
+
+create table "ssoProvider" ("id" text not null primary key, "issuer" text not null, "oidcConfig" text, "samlConfig" text, "userId" text not null references "user" ("id") on delete cascade, "providerId" text not null unique, "organizationId" text, "domain" text not null, "domainVerified" boolean);

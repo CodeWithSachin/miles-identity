@@ -153,7 +153,7 @@ describe("migrate()", () => {
       // OUR runner created.
       const tables = (await client`
         SELECT tablename FROM pg_tables
-        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent')
+        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent', 'ssoProvider')
         ORDER BY tablename
       `) as { tablename: string }[];
       expect(tables.map(t => t.tablename)).toEqual([
@@ -192,7 +192,7 @@ describe("migrate()", () => {
       // among OUR tables (the harness-seeded Better Auth tables are excluded).
       const tables = (await client`
         SELECT tablename FROM pg_tables
-        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent')
+        WHERE schemaname = ${schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent', 'ssoProvider')
       `) as { tablename: string }[];
       expect(tables.map(t => t.tablename)).toEqual(["schema_migration"]);
     });

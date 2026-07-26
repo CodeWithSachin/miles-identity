@@ -46,7 +46,7 @@ Use @.agents/skills/better-auth and @.agents/skills/security.
 Implement the legacy hash import, dedup passes and the merge procedure.
 Use @.agents/skills/alias-identity and @.agents/skills/postgres-migrations.
 
-# 11 — Vendor SSO
+# ✅ 11 — Vendor SSO
 Implement inbound vendor SSO with DNS domain verification and JIT provisioning.
 Use @.agents/skills/better-auth, @.agents/skills/security and @.agents/skills/scalar-api-docs.
 

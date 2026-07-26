@@ -10,7 +10,16 @@ describe("buildOpenApiSpec", () => {
   const spec = buildOpenApiSpec() as { paths: Record<string, unknown> };
 
   test("documents exactly the routes we own", () => {
-    expect(Object.keys(spec.paths).sort()).toEqual(["/api/admin/access", "/api/identity/resolve", "/health", "/ready"]);
+    expect(Object.keys(spec.paths).sort()).toEqual([
+      "/api/admin/access",
+      "/api/admin/vendors",
+      "/api/admin/vendors/{vendorId}/disable",
+      "/api/admin/vendors/{vendorId}/sso-provider",
+      "/api/admin/vendors/{vendorId}/verify-domain",
+      "/api/identity/resolve",
+      "/health",
+      "/ready",
+    ]);
   });
 
   // Security rule 13 / skill rule 2: never document a route we don't own.

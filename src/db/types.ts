@@ -131,6 +131,10 @@ export const ID_PREFIX = {
   access: "acc_",
   merge: "mrg_",
   dedup: "ddc_",
+  // The `providerId` we hand to Better Auth's `sso` plugin when registering a
+  // vendor's ssoProvider row (step 11) — a Miles Identity id, not a Better
+  // Auth-owned one, so it gets our own prefix like everything else here.
+  vendorSso: "ssp_",
 } as const;
 
 export function newId(kind: keyof typeof ID_PREFIX): string {

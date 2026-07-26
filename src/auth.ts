@@ -38,6 +38,7 @@ import { betterAuth } from "better-auth";
 import { jwt, openAPI } from "better-auth/plugins";
 import { createAuthMiddleware, isAPIError } from "better-auth/api";
 import { oauthProvider } from "@better-auth/oauth-provider";
+import { sso } from "@better-auth/sso";
 import { Pool } from "pg";
 import { getConfig, requireLater } from "@/lib/config";
 import { aliasOtp } from "@/auth/alias-otp";
@@ -62,6 +63,10 @@ const getRedis = async () => (await import("@/lib/redis")).redis;
 // which has a top-level `import ... from "bun"` the CLI's jiti loader can't
 // resolve. Reached lazily here so the real runtime resolves and caches it once.
 const getAccessTokenClaimsBuilder = async () => (await import("@/services/access")).buildAccessTokenClaims;
+
+// Same reason again: src/services/vendor-sso.ts pulls in src/db/vendor.ts (and
+// src/db/access.ts, src/db/identity.ts), all top-level `import ... from "bun"`.
+const getProvisionVendorUser = async () => (await import("@/services/vendor-sso")).provisionVendorUser;
 
 /**
  * Password hashing wired to `Bun.password` (argon2id). `verify` reads the algorithm
@@ -117,12 +122,45 @@ export const auth = betterAuth({
   // HTML reference, `disableDefaultReference` does NOT gate this path, and the
   // spec being publicly fetchable would violate security rule 13 the same as the
   // reference page would.
-  disabledPaths:
-    config.NODE_ENV === "production" ? ["/token", "/open-api/generate-schema"] : ["/token"],
+  //
+  // The five `/sso/*` paths below are Better Auth's own SSO-provider management
+  // endpoints (register/update/delete a provider, request/verify its domain).
+  // Each requires only *a* session, not any role — reachable directly, any
+  // signed-in user could register or delete a vendor's SSO provider. Disabled in
+  // every environment, not just production, so the only way to reach them is
+  // through our own ADMIN-gated routes (src/routes/admin/vendors.ts), which call
+  // `auth.api.*` in-process — disabling the HTTP path does not affect that, same
+  // as `/token` already being disabled doesn't stop `oauthProvider`'s internals.
+  // The actual vendor login flow (`/sign-in/sso`, `/sso/callback*`,
+  // `/sso/saml2/*`) and the read-only `/sso/providers`, `/sso/get-provider` stay
+  // reachable. See prompts/011, Assumption 6.
+  disabledPaths: [
+    "/token",
+    "/sso/register",
+    "/sso/update-provider",
+    "/sso/delete-provider",
+    "/sso/request-domain-verification",
+    "/sso/verify-domain",
+    ...(config.NODE_ENV === "production" ? ["/open-api/generate-schema"] : []),
+  ],
 
   emailAndPassword: {
     enabled: true,
     password: passwordHasher,
+  },
+
+  // Closes security.md's account-takeover path 3: without this, Better Auth's
+  // own `handleOAuthUserInfo` silently links a federated (SSO) login to an
+  // existing user with a matching, already-verified email whenever the
+  // provider's domain is verified. That is an implicit federated-login takeover
+  // of a password/OTP account by email match alone — forbidden outright. With
+  // `disableImplicitLinking`, that case fails the sign-in instead ("account not
+  // linked") rather than silently establishing a session. A deliberate, explicit
+  // link step is a separate, unbuilt feature (prompts/011, Out of scope).
+  account: {
+    accountLinking: {
+      disableImplicitLinking: true,
+    },
   },
 
   plugins: [
@@ -175,6 +213,29 @@ export const auth = betterAuth({
       // without needing a live OAuth flow).
       customAccessTokenClaims: async ({ user }) => (await getAccessTokenClaimsBuilder())(user ?? undefined),
       // Never pairwiseSecret: every product must resolve the same usr_ id.
+    }),
+
+    // Inbound vendor SSO (SAML 2.0 / OIDC), roadmap step 11 — see prompts/011
+    // and .agents/skills/security.md's vendor-federation and takeover-path-4
+    // rules. `domainVerification.enabled` makes Better Auth itself refuse to
+    // start a sign-in against a provider whose domain hasn't passed its DNS TXT
+    // check — a vendor cannot assert identities for a domain it hasn't proven
+    // it owns. `organizationProvisioning` is disabled: no `organization()`
+    // plugin is mounted (AGENTS.md — not without a plan), so there is nothing
+    // for it to provision into.
+    sso({
+      domainVerification: { enabled: true },
+      organizationProvisioning: { disabled: true },
+      // Runs once, on first-time registration only (provisionUserOnEveryLogin
+      // defaults to false) — see src/services/vendor-sso.ts for why "disabling
+      // a vendor blocks all future logins" is therefore enforced elsewhere
+      // (deleting the underlying ssoProvider row), not here.
+      provisionUser: async ({ user, userInfo, provider }) =>
+        (await getProvisionVendorUser())({
+          userId: user.id,
+          email: userInfo.email,
+          ssoProviderId: provider.providerId,
+        }),
     }),
   ],
 

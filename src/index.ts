@@ -12,6 +12,12 @@ import { closeRedis } from "@/lib/redis";
 import { healthResponse, readyHandler } from "@/routes/health";
 import { resolveRoute } from "@/routes/identity";
 import { adminAccessRoute } from "@/routes/admin/access";
+import {
+  createVendorRoute,
+  disableVendorRoute,
+  registerVendorSsoProviderRoute,
+  verifyVendorDomainRoute,
+} from "@/routes/admin/vendors";
 import { signInPage } from "@/routes/login";
 import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
@@ -40,6 +46,20 @@ const server = Bun.serve({
     // Product access RBAC — grant/revoke. Session-authed, admin-only; the
     // authorization check lives in src/services/access.ts, not here.
     "/api/admin/access": { POST: (req) => adminAccessRoute(req) },
+
+    // Vendor SSO lifecycle (roadmap step 11). Session-authed, ADMIN-for-
+    // masterclass-only; the authorization check lives in
+    // src/services/vendor-sso.ts, not here.
+    "/api/admin/vendors": { POST: (req) => createVendorRoute(req) },
+    "/api/admin/vendors/:vendorId/sso-provider": {
+      POST: (req) => registerVendorSsoProviderRoute(req, req.params.vendorId),
+    },
+    "/api/admin/vendors/:vendorId/verify-domain": {
+      POST: (req) => verifyVendorDomainRoute(req, req.params.vendorId),
+    },
+    "/api/admin/vendors/:vendorId/disable": {
+      POST: (req) => disableVendorRoute(req, req.params.vendorId),
+    },
 
     // Better Auth owns everything under /api/auth. No handler of ours goes inside
     // this prefix (AGENTS.md API contracts). More-specific routes above still win.

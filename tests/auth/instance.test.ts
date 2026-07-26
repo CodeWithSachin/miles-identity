@@ -143,6 +143,12 @@ describe("auth instance wiring", () => {
   test("exposes a single request handler to mount at /api/auth/*", () => {
     expect(typeof auth.handler).toBe("function");
   });
+
+  // security.md takeover path 3: a federated login must never silently link to
+  // an existing verified account by email match alone (prompts/011).
+  test("disables implicit account linking", () => {
+    expect(auth.options.account?.accountLinking?.disableImplicitLinking).toBe(true);
+  });
 });
 
 // Plugin instances aren't individually typed on auth.options.plugins; narrow by id
@@ -163,6 +169,22 @@ describe("oauth provider wiring", () => {
   // The OAuth equivalent of Better Auth's own /token is /oauth2/token.
   test("disables Better Auth's own /token path", () => {
     expect(auth.options.disabledPaths).toContain("/token");
+  });
+
+  // Roadmap step 11 (prompts/011, Assumption 6): these require only *a* session,
+  // not any role, so any signed-in user could otherwise register/verify/delete a
+  // vendor's SSO provider directly. Forcing them through our own ADMIN-gated
+  // routes (src/routes/admin/vendors.ts) closes that gap.
+  test("disables Better Auth's own SSO-provider management paths", () => {
+    expect(auth.options.disabledPaths).toEqual(
+      expect.arrayContaining([
+        "/sso/register",
+        "/sso/update-provider",
+        "/sso/delete-provider",
+        "/sso/request-domain-verification",
+        "/sso/verify-domain",
+      ]),
+    );
   });
 
   test("overrides the library's 1h default access token TTL with the config value", () => {
@@ -217,6 +239,20 @@ describe("openAPI plugin wiring", () => {
   // default reference must stay enabled here.
   test("does not disable the default reference outside production", () => {
     expect(findPlugin("open-api").options.disableDefaultReference).toBe(false);
+  });
+});
+
+describe("sso plugin wiring", () => {
+  test("registers the sso plugin with DNS domain verification enabled", () => {
+    expect(findPlugin("sso").options.domainVerification?.enabled).toBe(true);
+  });
+
+  test("does not provision into an organization (no organization() plugin mounted)", () => {
+    expect(findPlugin("sso").options.organizationProvisioning?.disabled).toBe(true);
+  });
+
+  test("wires a provisionUser callback", () => {
+    expect(typeof findPlugin("sso").options.provisionUser).toBe("function");
   });
 });
 
