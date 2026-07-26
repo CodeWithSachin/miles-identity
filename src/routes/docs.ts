@@ -5,9 +5,14 @@
  * Two spec sources, one page: Better Auth's own `openAPI()` plugin (src/auth.ts)
  * covers `/api/auth/*` — including alias-otp's `/sign-in/otp/start|verify`,
  * registered as ordinary plugin endpoints. This file covers everything else we
- * wrote: `/api/identity/resolve`, `/health`, `/ready`. The spec is generated from
- * the SAME zod schemas that validate requests/responses at those boundaries
- * (src/routes/identity.ts) — never a hand-written parallel spec.
+ * wrote: `/api/identity/resolve`, `/api/admin/access`, `/health`, `/ready`. The
+ * spec is generated from the SAME zod schemas that validate requests/responses
+ * at those boundaries (src/routes/identity.ts, src/routes/admin/access.ts) —
+ * never a hand-written parallel spec.
+ *
+ * `/api/admin/access` is admin-only but NOT excluded like `/api/internal/*` — it
+ * is reachable from the admin console over a session cookie, not network-
+ * allowlisted, so it is documented like any other route we own.
  *
  * `docsRoutes` is a pure function of NODE_ENV so the production-exposure
  * guarantee (security rule 13 — never publicly reachable in production) is a
@@ -16,6 +21,7 @@
 
 import { z } from "zod";
 import { bodySchema, responseSchema } from "@/routes/identity";
+import { bodySchema as adminAccessBodySchema, responseSchema as adminAccessResponseSchema } from "@/routes/admin/access";
 
 /** Mirrors src/services/health.ts's `Readiness` type. That boundary has no zod
  * schema of its own (no request body to validate), so this is docs-only. */
@@ -70,6 +76,26 @@ export function buildOpenApiSpec(): object {
             },
             "400": { description: "Invalid request body" },
             "429": { description: "Rate limited (per IP and per handle)" },
+          },
+        },
+      },
+      "/api/admin/access": {
+        post: {
+          summary: "Grant or revoke a user's product access (admin only)",
+          security: [{ session: [] }],
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: z.toJSONSchema(adminAccessBodySchema) } },
+          },
+          responses: {
+            "200": {
+              description: "The resulting user_product_access row.",
+              content: { "application/json": { schema: z.toJSONSchema(adminAccessResponseSchema) } },
+            },
+            "400": { description: "Invalid request body, or a role/vendor_id mismatch" },
+            "401": { description: "No session" },
+            "403": { description: "Session present, but not an ADMIN for this product_id" },
+            "404": { description: "Target user not found, or no active row to revoke" },
           },
         },
       },

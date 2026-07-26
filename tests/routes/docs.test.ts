@@ -9,8 +9,8 @@ import { buildOpenApiSpec, docsRoutes } from "@/routes/docs";
 describe("buildOpenApiSpec", () => {
   const spec = buildOpenApiSpec() as { paths: Record<string, unknown> };
 
-  test("documents exactly the three routes we own", () => {
-    expect(Object.keys(spec.paths).sort()).toEqual(["/api/identity/resolve", "/health", "/ready"]);
+  test("documents exactly the routes we own", () => {
+    expect(Object.keys(spec.paths).sort()).toEqual(["/api/admin/access", "/api/identity/resolve", "/health", "/ready"]);
   });
 
   // Security rule 13 / skill rule 2: never document a route we don't own.

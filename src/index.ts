@@ -11,6 +11,7 @@ import { errorResponse } from "@/lib/errors";
 import { closeRedis } from "@/lib/redis";
 import { healthResponse, readyHandler } from "@/routes/health";
 import { resolveRoute } from "@/routes/identity";
+import { adminAccessRoute } from "@/routes/admin/access";
 import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
 
@@ -30,6 +31,10 @@ const server = Bun.serve({
 
     // The pre-login resolver. Enumeration-sensitive — see src/routes/identity.ts.
     "/api/identity/resolve": { POST: (req, server) => resolveRoute(req, server) },
+
+    // Product access RBAC — grant/revoke. Session-authed, admin-only; the
+    // authorization check lives in src/services/access.ts, not here.
+    "/api/admin/access": { POST: (req) => adminAccessRoute(req) },
 
     // Better Auth owns everything under /api/auth. No handler of ours goes inside
     // this prefix (AGENTS.md API contracts). More-specific routes above still win.

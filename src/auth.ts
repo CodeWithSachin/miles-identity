@@ -13,10 +13,12 @@
  * .agents/skills/better-auth.md and the roadmap-step-6 plan) can verify tokens
  * locally against JWKS. 2FA, admin and SSO plugins remain later roadmap steps.
  *
- * Token claims stay identity-only for now (`email`, `email_verified`). Role/product
- * claims (`products`, `vendor_id`) are step 7 (RBAC), once `user_product_access`
- * has read helpers — do not pull them forward.
+ * Step 7 (RBAC) adds the `products` claim (product_id/role/vendor_id per active
+ * `user_product_access` row), via `buildAccessTokenClaims` in
+ * `src/services/access.ts` — imported lazily below for the same jiti/CLI reason
+ * `getRedis` is.
  *
+
  * We deliberately do NOT mount Better Auth's own `emailOTP`/`phoneNumber` plugins:
  * they key on `user.email`/`user.phoneNumber` and bypass `user_identity`, so they
  * cannot honour the alias model or the verified-only rule. See src/auth/alias-otp.ts.
@@ -42,6 +44,11 @@ const config = getConfig();
  * under `Bun.serve` resolves and module-caches it on first use.
  */
 const getRedis = async () => (await import("@/lib/redis")).redis;
+
+// Same reason as getRedis: src/services/access.ts pulls in src/db/access.ts,
+// which has a top-level `import ... from "bun"` the CLI's jiti loader can't
+// resolve. Reached lazily here so the real runtime resolves and caches it once.
+const getAccessTokenClaimsBuilder = async () => (await import("@/services/access")).buildAccessTokenClaims;
 
 /**
  * Password hashing wired to `Bun.password` (argon2id). `verify` reads the algorithm
@@ -132,11 +139,11 @@ export const auth = betterAuth({
       // .default(900), so it is always set at runtime, but tier 2 is typed optional.
       accessTokenExpiresIn: requireLater("ACCESS_TOKEN_TTL_SECONDS"),
       storeClientSecret: oauthClientSecretHasher,
-      // Identity-only. products/vendor_id are step 7 (RBAC), once user_product_access
-      // has read helpers — sub/iss/aud/exp are set by the plugin itself, after this
-      // return value is spread in, so they can't be clobbered from here.
-      customAccessTokenClaims: ({ user }) =>
-        user ? { email: user.email, email_verified: user.emailVerified } : {},
+      // sub/iss/aud/exp are set by the plugin itself, after this return value is
+      // spread in, so they can't be clobbered from here. See buildAccessTokenClaims
+      // in src/services/access.ts for the products claim logic (tested there,
+      // without needing a live OAuth flow).
+      customAccessTokenClaims: async ({ user }) => (await getAccessTokenClaimsBuilder())(user ?? undefined),
       // Never pairwiseSecret: every product must resolve the same usr_ id.
     }),
   ],

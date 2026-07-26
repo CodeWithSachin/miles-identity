@@ -182,16 +182,13 @@ describe("oauth provider wiring", () => {
     expect(findPlugin("oauth-provider").options.pairwiseSecret).toBeUndefined();
   });
 
-  // Identity-only claims. products/vendor_id are step 7 (RBAC) — must not leak in early.
-  test("customAccessTokenClaims adds only email and email_verified", async () => {
-    const opts = findPlugin("oauth-provider").options;
-    const claims = await opts.customAccessTokenClaims({
-      user: { id: "usr_1", email: "a@example.com", emailVerified: true },
-      scopes: ["openid"],
-    });
-    expect(claims).toEqual({ email: "a@example.com", email_verified: true });
-  });
-
+  // Step 7 (RBAC) wires in buildAccessTokenClaims (src/services/access.ts), which
+  // reads user_product_access for the `products` claim — full coverage of that
+  // logic (including a real DB-backed products array) lives in
+  // tests/services/access.test.ts, injecting a fake `getAccess` there. Here we
+  // only prove the wiring calls through by delegating to `auth.ts`'s exported
+  // instance without needing a live database: no user means the products lookup
+  // is never reached at all.
   test("customAccessTokenClaims returns no claims when there is no user", async () => {
     const opts = findPlugin("oauth-provider").options;
     const claims = await opts.customAccessTokenClaims({ scopes: ["openid"] });

@@ -86,6 +86,24 @@ export class DependencyUnavailableError extends AppError {
   }
 }
 
+/** Caller is authenticated but lacks the authorization this action requires. */
+export class ForbiddenError extends AppError {
+  readonly code = "FORBIDDEN";
+  readonly httpStatus = 403;
+}
+
+/** The referenced resource — or the specific state of it the caller expected — does not exist. */
+export class NotFoundError extends AppError {
+  readonly code = "NOT_FOUND";
+  readonly httpStatus = 404;
+}
+
+/** Input matched its zod schema but violates a domain rule (e.g. vendor-role scoping). */
+export class ValidationError extends AppError {
+  readonly code = "VALIDATION_ERROR";
+  readonly httpStatus = 400;
+}
+
 export function isAppError(value: unknown): value is AppError {
   return value instanceof AppError;
 }

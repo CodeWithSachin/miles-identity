@@ -34,7 +34,7 @@ Use @.agents/skills/better-auth and @.agents/skills/security.
 Implement the Dev OTP option based on a flag, and create the API documentation using Scalar.
 Use @.agents/skills/scalar-api-docs, @.agents/skills/security and @.agents/skills/better-auth.
 
-# 8 — RBAC (layer 1)
+# ✅ 8 — RBAC (layer 1)
 Implement product access RBAC and the admin grant/revoke endpoints.
 Use @.agents/skills/security, @.agents/skills/postgres-migrations and @.agents/skills/scalar-api-docs.
 
