@@ -478,7 +478,7 @@ describe("schema shape", () => {
     // seeds, so this still describes exactly what OUR migrations create.
     const rows = (await db.sql`
       SELECT tablename FROM pg_tables
-      WHERE schemaname = ${db.schema} AND tablename NOT IN ('user', 'session', 'account')
+      WHERE schemaname = ${db.schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent')
       ORDER BY tablename
     `) as { tablename: string }[];
 
@@ -518,7 +518,7 @@ describe("schema shape", () => {
     const tables = await withTestSchema(async other => {
       const rows = (await other.sql`
         SELECT count(*)::int AS n FROM pg_tables
-        WHERE schemaname = ${other.schema} AND tablename NOT IN ('user', 'session', 'account')
+        WHERE schemaname = ${other.schema} AND tablename NOT IN ('user', 'session', 'account', 'jwks', 'oauthClient', 'oauthRefreshToken', 'oauthAccessToken', 'oauthConsent')
       `) as { n: number }[];
       return rows[0]?.n ?? 0;
     });

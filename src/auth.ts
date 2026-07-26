@@ -6,9 +6,16 @@
  * is the ONE place `pg` is allowed (AGENTS.md tech-stack exception). Everything WE
  * write goes through `Bun.sql` in `src/db/` — two clients, one database, by design.
  *
- * Step 5 adds passwordless sign-in via our first-party `aliasOtp` plugin (email +
- * SMS OTP resolved through the alias table). The OAuth provider, JWT, 2FA, admin
- * and SSO plugins remain later roadmap steps — do not add them here.
+ * Step 5 added passwordless sign-in via our first-party `aliasOtp` plugin (email +
+ * SMS OTP resolved through the alias table). Step 6 adds the OAuth 2.1/OIDC
+ * provider — `jwt()` + `oauthProvider()` — so the four trusted clients (registered
+ * separately by `src/db/seed-oauth-clients.ts`, NOT a static option here — see
+ * .agents/skills/better-auth.md and the roadmap-step-6 plan) can verify tokens
+ * locally against JWKS. 2FA, admin and SSO plugins remain later roadmap steps.
+ *
+ * Token claims stay identity-only for now (`email`, `email_verified`). Role/product
+ * claims (`products`, `vendor_id`) are step 7 (RBAC), once `user_product_access`
+ * has read helpers — do not pull them forward.
  *
  * We deliberately do NOT mount Better Auth's own `emailOTP`/`phoneNumber` plugins:
  * they key on `user.email`/`user.phoneNumber` and bypass `user_identity`, so they
@@ -16,8 +23,10 @@
  */
 
 import { betterAuth } from "better-auth";
+import { jwt } from "better-auth/plugins";
+import { oauthProvider } from "@better-auth/oauth-provider";
 import { Pool } from "pg";
-import { getConfig } from "@/lib/config";
+import { getConfig, requireLater } from "@/lib/config";
 import { aliasOtp } from "@/auth/alias-otp";
 import { sendEmailOtp } from "@/integrations/email";
 import { sendSmsOtp } from "@/integrations/sms";
@@ -45,6 +54,17 @@ export const passwordHasher = {
     Bun.password.verify(password, hash),
 };
 
+/**
+ * Reused as `storeClientSecret` below AND by `seed-oauth-clients.ts`, so the seed
+ * script's hash and the OAuth provider's runtime verify are always the same
+ * function — same reasoning as `passwordHasher`.
+ */
+export const oauthClientSecretHasher = {
+  hash: (clientSecret: string): Promise<string> => Bun.password.hash(clientSecret),
+  verify: (clientSecret: string, hash: string): Promise<boolean> =>
+    Bun.password.verify(clientSecret, hash),
+};
+
 export const auth = betterAuth({
   // The one sanctioned `pg` use: Better Auth's own tables, via Kysely.
   database: new Pool({ connectionString: config.DATABASE_URL }),
@@ -54,14 +74,55 @@ export const auth = betterAuth({
   // 2–3x on /get-session by joining session+user in one query. Kysely/pg supports it.
   experimental: { joins: true },
 
+  // The OAuth equivalent of Better Auth's own /token is /oauth2/token.
+  disabledPaths: ["/token"],
+
   emailAndPassword: {
     enabled: true,
     password: passwordHasher,
   },
 
-  // Passwordless sign-in wired to the alias resolver. Adds no Better Auth table —
-  // it reuses the existing `verification` store for OTP state. See alias-otp.ts.
-  plugins: [aliasOtp({ sendEmailOtp, sendSmsOtp })],
+  plugins: [
+    // Passwordless sign-in wired to the alias resolver. Adds no Better Auth table —
+    // it reuses the existing `verification` store for OTP state. See alias-otp.ts.
+    aliasOtp({ sendEmailOtp, sendSmsOtp }),
+
+    // RS256 per docs/architecture-plan.md §3.3 — the library default is EdDSA.
+    // disableSettingJwtHeader: recommended whenever an OAuth provider plugin is
+    // present, so session cookies don't also carry a signed JWT header.
+    jwt({
+      jwks: { keyPairConfig: { alg: "RS256" } },
+      disableSettingJwtHeader: true,
+    }),
+
+    // The OAuth 2.1/OIDC authorization server. Trusted clients are NOT configured
+    // here (no such option exists on the installed package) — they're rows in
+    // `oauthClient`, written by `bun run oauth:clients:sync`. See oauth-clients.ts.
+    oauthProvider({
+      loginPage: "/sign-in",
+      consentPage: "/consent",
+      // GHSA-p2fr-6hmx-4528: on every 1.6.x release, the token endpoint doesn't bind
+      // the RFC 8707 `resource` parameter to the original authorization grant, so a
+      // client requesting a `resource` outside a single-entry validAudiences could
+      // otherwise pick a JWT audience its authorization never covered. Pinning to
+      // exactly one audience (rather than leaving the default implicit) closes that
+      // gap per the advisory's own workaround. Accepted risk until a stable 1.7.0
+      // ships with the real fix (resources bound to the auth code + refresh token);
+      // `bun audit` is told to ignore this GHSA in the meantime (see package.json).
+      validAudiences: [config.BETTER_AUTH_URL],
+      // 5–15 min, already enforced by the config schema — never the library's 1h default.
+      // requireLater, not config.ACCESS_TOKEN_TTL_SECONDS: the field carries a zod
+      // .default(900), so it is always set at runtime, but tier 2 is typed optional.
+      accessTokenExpiresIn: requireLater("ACCESS_TOKEN_TTL_SECONDS"),
+      storeClientSecret: oauthClientSecretHasher,
+      // Identity-only. products/vendor_id are step 7 (RBAC), once user_product_access
+      // has read helpers — sub/iss/aud/exp are set by the plugin itself, after this
+      // return value is spread in, so they can't be clobbered from here.
+      customAccessTokenClaims: ({ user }) =>
+        user ? { email: user.email, email_verified: user.emailVerified } : {},
+      // Never pairwiseSecret: every product must resolve the same usr_ id.
+    }),
+  ],
 
   // Server-controlled extensions to the `user` row. `input: false` means a client
   // cannot set them. Declared here so the Better-Auth-owned `user` table carries

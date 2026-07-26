@@ -92,6 +92,16 @@ const tier2 = {
 
 	LMS_WEB_CLIENT_SECRET: nonEmpty,
 	MASTERCLASS_WEB_CLIENT_SECRET: nonEmpty,
+	LMS_WEB_REDIRECT_URLS: nonEmpty.refine(
+		(v) => v.split(",").every((u) => /^https?:\/\//.test(u.trim())),
+		{ message: "must be a comma-separated list of http(s) URLs" },
+	),
+	MASTERCLASS_WEB_REDIRECT_URLS: nonEmpty.refine(
+		(v) => v.split(",").every((u) => /^https?:\/\//.test(u.trim())),
+		{ message: "must be a comma-separated list of http(s) URLs" },
+	),
+	MILES_ONE_APP_REDIRECT_URL: nonEmpty,
+	MASTERCLASS_APP_REDIRECT_URL: nonEmpty,
 
 	FGA_API_URL: httpUrl,
 	FGA_STORE_ID: nonEmpty,

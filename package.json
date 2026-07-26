@@ -23,9 +23,10 @@
     "db:seed": "bun run src/db/seed.ts",
     "auth:schema": "bun run src/db/auth-schema.ts",
     "auth:migrate": "bun run src/db/auth-schema.ts --apply",
+    "oauth:clients:sync": "bun run src/db/seed-oauth-clients.ts",
     "fga:model": "bun run src/authz/push-model.ts",
-    "audit": "bun audit",
-    "check": "bun run typecheck && bun test && bun audit"
+    "audit": "bun audit --ignore=GHSA-p2fr-6hmx-4528",
+    "check": "bun run typecheck && bun test && bun run audit"
   },
   "dependencies": {
     "better-auth": "1.6.25",

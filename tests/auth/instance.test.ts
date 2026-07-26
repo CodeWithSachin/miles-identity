@@ -57,7 +57,11 @@ for (const [key, value] of Object.entries(REQUIRED)) {
   if (Bun.env[key] === undefined || Bun.env[key] === "") Bun.env[key] = value;
 }
 
-const { auth, passwordHasher } = await import("@/auth"); // getConfig memoises here
+const {
+  auth,
+  passwordHasher,
+  oauthClientSecretHasher,
+} = await import("@/auth"); // getConfig memoises here
 
 for (const [key, previous] of Object.entries(savedEnv)) {
   if (previous === undefined) delete Bun.env[key];
@@ -126,5 +130,81 @@ describe("auth instance wiring", () => {
 
   test("exposes a single request handler to mount at /api/auth/*", () => {
     expect(typeof auth.handler).toBe("function");
+  });
+});
+
+// Plugin instances aren't individually typed on auth.options.plugins; narrow by id
+// and read back the raw options object each plugin factory stores at `.options`.
+function findPlugin(id: string): { options: Record<string, any> } {
+  const plugins = auth.options.plugins as unknown as { id: string; options: Record<string, any> }[] | undefined;
+  const plugin = plugins?.find((p) => p.id === id);
+  if (!plugin) throw new Error(`plugin not found: ${id}`);
+  return plugin;
+}
+
+describe("oauth provider wiring", () => {
+  test("registers jwt and oauth-provider plugins", () => {
+    expect(findPlugin("jwt")).toBeDefined();
+    expect(findPlugin("oauth-provider")).toBeDefined();
+  });
+
+  // The OAuth equivalent of Better Auth's own /token is /oauth2/token.
+  test("disables Better Auth's own /token path", () => {
+    expect(auth.options.disabledPaths).toContain("/token");
+  });
+
+  test("overrides the library's 1h default access token TTL with the config value", () => {
+    const opts = findPlugin("oauth-provider").options;
+    expect(opts.accessTokenExpiresIn).toBe(900);
+    expect(opts.accessTokenExpiresIn).toBeLessThanOrEqual(900);
+  });
+
+  // GHSA-p2fr-6hmx-4528: a single-entry validAudiences is the documented workaround
+  // for the 1.6.x resource-indicator/audience-binding gap (accepted risk, see
+  // package.json's audit script and the comment on this option in auth.ts).
+  test("pins validAudiences to exactly one audience", () => {
+    const opts = findPlugin("oauth-provider").options;
+    expect(opts.validAudiences).toEqual(["http://localhost:3000"]);
+  });
+
+  // RS256 per docs/architecture-plan.md §3.3 — the library default is EdDSA.
+  test("signs JWTs with RS256, not the library default", () => {
+    const opts = findPlugin("jwt").options;
+    expect(opts.jwks?.keyPairConfig?.alg).toBe("RS256");
+  });
+
+  test("disables setting a JWT session header, as recommended alongside an OAuth provider", () => {
+    expect(findPlugin("jwt").options.disableSettingJwtHeader).toBe(true);
+  });
+
+  // Every product must resolve the same usr_ id — pairwise subjects break that.
+  test("never sets pairwiseSecret", () => {
+    expect(findPlugin("oauth-provider").options.pairwiseSecret).toBeUndefined();
+  });
+
+  // Identity-only claims. products/vendor_id are step 7 (RBAC) — must not leak in early.
+  test("customAccessTokenClaims adds only email and email_verified", async () => {
+    const opts = findPlugin("oauth-provider").options;
+    const claims = await opts.customAccessTokenClaims({
+      user: { id: "usr_1", email: "a@example.com", emailVerified: true },
+      scopes: ["openid"],
+    });
+    expect(claims).toEqual({ email: "a@example.com", email_verified: true });
+  });
+
+  test("customAccessTokenClaims returns no claims when there is no user", async () => {
+    const opts = findPlugin("oauth-provider").options;
+    const claims = await opts.customAccessTokenClaims({ scopes: ["openid"] });
+    expect(claims).toEqual({});
+  });
+});
+
+describe("oauthClientSecretHasher", () => {
+  test("hashes with argon2id and verifies round-trip, same primitive as passwordHasher", async () => {
+    const secret = "a-trusted-client-secret";
+    const hash = await oauthClientSecretHasher.hash(secret);
+    expect(hash.startsWith("$argon2id$")).toBe(true);
+    expect(await oauthClientSecretHasher.verify(secret, hash)).toBe(true);
+    expect(await oauthClientSecretHasher.verify("wrong-secret", hash)).toBe(false);
   });
 });
