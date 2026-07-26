@@ -27,9 +27,11 @@
  * (src/services/legacy-import.ts) rather than proxying to the legacy database at
  * login time (docs/architecture-plan.md:463). `passwordHasher.verify` dispatches
  * a `pbkdf2_sha256$…` hash to `verifyLegacyPassword`, gated by
- * `MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED` (fail-closed default). `hooks.after`
- * rehashes to argon2id on the first successful sign-in via
- * `src/services/legacy-rehash.ts`.
+ * `DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED` (fail-closed default). Step 10
+ * (prompts/010) generalises the same import to Miles One (also Django/PBKDF2 —
+ * same gate, same branch) and LMS (Node/bcrypt — no gate needed,
+ * `Bun.password.verify` already trusts bcrypt natively). `hooks.after` rehashes
+ * to argon2id on the first successful sign-in via `src/services/legacy-rehash.ts`.
  */
 
 import { betterAuth } from "better-auth";
@@ -64,15 +66,19 @@ const getAccessTokenClaimsBuilder = async () => (await import("@/services/access
 /**
  * Password hashing wired to `Bun.password` (argon2id). `verify` reads the algorithm
  * out of the hash string, so an imported bcrypt hash verifies through the same call.
- * A Django `pbkdf2_sha256$…` hash (step 9's Masterclass legacy import) takes the
- * dedicated branch — `Bun.password.verify` cannot auto-detect that format.
+ * A Django `pbkdf2_sha256$…` hash (Masterclass's or Miles One's legacy import,
+ * steps 9/10) takes the dedicated branch — `Bun.password.verify` cannot
+ * auto-detect that format. The branch is format-dispatch, not product-dispatch:
+ * this callback only ever receives `{ hash, password }`, never which product the
+ * row came from, so one shared gate covers every Django source (prompts/010,
+ * Assumption 3).
  *
- * The `MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED` gate lives HERE, not as a
+ * The `DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED` gate lives HERE, not as a
  * separate hook: while the flag is off, a PBKDF2 hash simply never verifies, so
  * an imported-but-gated account fails exactly the same way Better Auth's own
  * sign-in/email already fails a wrong password (BASE_ERROR_CODES.
  * INVALID_EMAIL_OR_PASSWORD) — no new error, no new branch for an attacker to
- * distinguish. See prompts/009 and .agents/skills/better-auth.md.
+ * distinguish. See prompts/009, prompts/010 and .agents/skills/better-auth.md.
  *
  * Exported so the wiring is unit-testable without standing up the database.
  */
@@ -80,7 +86,7 @@ export const passwordHasher = {
   hash: (password: string): Promise<string> => Bun.password.hash(password),
   verify: async ({ password, hash }: { password: string; hash: string }): Promise<boolean> => {
     if (hash.startsWith("pbkdf2_sha256$")) {
-      return verifyLegacyPassword(password, hash, config.MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED ?? false);
+      return verifyLegacyPassword(password, hash, config.DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED ?? false);
     }
     return Bun.password.verify(password, hash);
   },
@@ -197,8 +203,8 @@ export const auth = betterAuth({
         input: false,
         fieldName: "merged_into_user_id",
       },
-      // Set by the step-9 legacy import (src/services/legacy-import.ts) to the
-      // source format ("django_pbkdf2") of an imported, not-yet-rehashed
+      // Set by the legacy import (src/services/legacy-import.ts) to the source
+      // format ("django_pbkdf2" or "node_bcrypt") of an imported, not-yet-rehashed
       // password. Cleared by the rehash-on-login `hooks.after` below on the
       // first successful sign-in. Null for every account never imported.
       importedHashAlgo: {
@@ -210,12 +216,12 @@ export const auth = betterAuth({
     },
   },
 
-  // Rehash-on-login for step 9's legacy import: the first successful sign-in
-  // against an imported PBKDF2 hash upgrades the stored hash to argon2id and
-  // clears importedHashAlgo, so the account is unaffected by
-  // MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED from that point on. Only ever
-  // runs after a REAL verified success — never on a failed or rejected
-  // sign-in. See prompts/009.
+  // Rehash-on-login for the legacy import: the first successful sign-in
+  // against an imported hash (any source) upgrades the stored hash to argon2id
+  // and clears importedHashAlgo, so the account is unaffected by
+  // DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED (for a Django source) from that point
+  // on. Only ever runs after a REAL verified success — never on a failed or
+  // rejected sign-in. See prompts/009, prompts/010.
   hooks: {
     after: createAuthMiddleware(async (ctx) => {
       if (ctx.path !== "/sign-in/email") return;

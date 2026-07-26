@@ -36,6 +36,11 @@ export type MergeTier = (typeof MERGE_TIERS)[number];
 export const USER_STATUSES = ["active", "invited", "suspended", "merged"] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
+/** A dedup candidate's review state. `pending` until a human (D/E) or the auto-merge
+ * pass (A/B/C) decides it; `merged`/`rejected` are terminal. Mirrors ck_dedup_status. */
+export const DEDUP_CANDIDATE_STATUSES = ["pending", "merged", "rejected"] as const;
+export type DedupCandidateStatus = (typeof DEDUP_CANDIDATE_STATUSES)[number];
+
 // ── rows ──────────────────────────────────────────────────────────────────────
 
 export type SchemaMigrationRow = {
@@ -90,6 +95,18 @@ export type IdentityMergeLogRow = {
   created_at: Date;
 };
 
+export type DedupCandidateRow = {
+  id: string;
+  user_id_a: string;
+  user_id_b: string;
+  tier: MergeTier;
+  evidence: unknown;
+  status: DedupCandidateStatus;
+  decided_by: string | null;
+  decided_at: Date | null;
+  created_at: Date;
+};
+
 export type OutboxRow = {
   id: bigint;
   aggregate: string;
@@ -113,6 +130,7 @@ export const ID_PREFIX = {
   vendor: "vnd_",
   access: "acc_",
   merge: "mrg_",
+  dedup: "ddc_",
 } as const;
 
 export function newId(kind: keyof typeof ID_PREFIX): string {

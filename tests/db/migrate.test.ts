@@ -40,9 +40,9 @@ describe("discoverMigrations", () => {
   test("finds the real migrations in filename order", async () => {
     const migrations = await discoverMigrations(REAL_MIGRATIONS);
 
-    expect(migrations.map(m => m.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
+    expect(migrations.map(m => m.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]);
     expect(migrations[0]?.name).toBe("0001_schema_migration.sql");
-    expect(migrations[6]?.name).toBe("0007_add_user_foreign_keys.sql");
+    expect(migrations[7]?.name).toBe("0008_dedup_candidate.sql");
   });
 
   test("computes a stable sha256 checksum", async () => {
@@ -141,13 +141,13 @@ describe("migrate()", () => {
     await withSchema(async ({ client, schema }) => {
       const result = await runMigrate({ client, dir: REAL_MIGRATIONS });
 
-      expect(result.applied).toHaveLength(7);
+      expect(result.applied).toHaveLength(8);
       expect(result.skipped).toHaveLength(0);
 
       const rows = (await client`SELECT version FROM schema_migration ORDER BY version`) as {
         version: string;
       }[];
-      expect(rows.map(r => r.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007"]);
+      expect(rows.map(r => r.version)).toEqual(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008"]);
 
       // Excludes the Better-Auth-owned tables the harness seeds — this asserts what
       // OUR runner created.
@@ -157,6 +157,7 @@ describe("migrate()", () => {
         ORDER BY tablename
       `) as { tablename: string }[];
       expect(tables.map(t => t.tablename)).toEqual([
+        "dedup_candidate",
         "identity_merge_log",
         "outbox",
         "schema_migration",
@@ -173,10 +174,10 @@ describe("migrate()", () => {
       const second = await runMigrate({ client, dir: REAL_MIGRATIONS });
 
       expect(second.applied).toEqual([]);
-      expect(second.skipped).toHaveLength(7);
+      expect(second.skipped).toHaveLength(8);
 
       const rows = (await client`SELECT count(*)::int AS n FROM schema_migration`) as { n: number }[];
-      expect(rows[0]?.n).toBe(7);
+      expect(rows[0]?.n).toBe(8);
     });
   });
 
@@ -184,7 +185,7 @@ describe("migrate()", () => {
     await withSchema(async ({ client, schema }) => {
       const dry = await runMigrate({ client, dir: REAL_MIGRATIONS, dryRun: true });
 
-      expect(dry.pending).toHaveLength(7);
+      expect(dry.pending).toHaveLength(8);
       expect(dry.applied).toEqual([]);
 
       // 0001 is IF NOT EXISTS and is applied to read state, so only the ledger exists

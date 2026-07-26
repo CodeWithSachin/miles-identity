@@ -389,6 +389,52 @@ describe("identity_merge_log — append only", () => {
   });
 });
 
+describe("dedup_candidate", () => {
+  test("rejects a self-pair", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO dedup_candidate (id, user_id_a, user_id_b, tier, evidence)
+        VALUES (${newId("dedup")}, ${USER_A}, ${USER_A}, ${"E"}, ${"{}"})
+      `,
+      "ck_dedup_distinct",
+    );
+  });
+
+  test("rejects an unknown tier", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO dedup_candidate (id, user_id_a, user_id_b, tier, evidence)
+        VALUES (${newId("dedup")}, ${USER_A}, ${USER_B}, ${"F"}, ${"{}"})
+      `,
+      "ck_dedup_tier",
+    );
+  });
+
+  test("rejects an unknown status", async () => {
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO dedup_candidate (id, user_id_a, user_id_b, tier, evidence, status)
+        VALUES (${newId("dedup")}, ${USER_A}, ${USER_B}, ${"E"}, ${"{}"}, ${"approved"})
+      `,
+      "ck_dedup_status",
+    );
+  });
+
+  test("rejects a duplicate pair", async () => {
+    await db.sql`
+      INSERT INTO dedup_candidate (id, user_id_a, user_id_b, tier, evidence)
+      VALUES (${newId("dedup")}, ${USER_A}, ${USER_B}, ${"E"}, ${"{}"})
+    `;
+    await expectRejection(
+      () => db.sql`
+        INSERT INTO dedup_candidate (id, user_id_a, user_id_b, tier, evidence)
+        VALUES (${newId("dedup")}, ${USER_A}, ${USER_B}, ${"E"}, ${"{}"})
+      `,
+      "uq_dedup_pair",
+    );
+  });
+});
+
 describe("outbox", () => {
   test("ix_outbox_pending exists and is partial", async () => {
     const rows = (await db.sql`
@@ -483,6 +529,7 @@ describe("schema shape", () => {
     `) as { tablename: string }[];
 
     expect(rows.map(r => r.tablename)).toEqual([
+      "dedup_candidate",
       "identity_merge_log",
       "outbox",
       "schema_migration",
@@ -522,6 +569,6 @@ describe("schema shape", () => {
       `) as { n: number }[];
       return rows[0]?.n ?? 0;
     });
-    expect(tables).toBe(6);
+    expect(tables).toBe(7);
   });
 });

@@ -1,6 +1,6 @@
 /**
- * The flag gate for step 9's Masterclass legacy password import
- * (`MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED`, wired into
+ * The flag gate for the Django legacy password import (Masterclass, step 9;
+ * Miles One, step 10) (`DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED`, wired into
  * `passwordHasher.verify` in src/auth.ts). Tested against the pure,
  * flag-injected `verifyLegacyPassword` (src/lib/pbkdf2.ts) rather than the live
  * `@/auth` singleton — the singleton memoises config from `Bun.env` once per
@@ -22,7 +22,7 @@ function djangoHash(password: string): string {
   return `pbkdf2_sha256$${ITERATIONS}$${SALT}$${hash}`;
 }
 
-describe("verifyLegacyPassword — MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED gate", () => {
+describe("verifyLegacyPassword — DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED gate", () => {
   test("flag off rejects the CORRECT legacy password (fail-closed default)", () => {
     const hash = djangoHash(PASSWORD);
     expect(verifyLegacyPassword(PASSWORD, hash, false)).toBe(false);

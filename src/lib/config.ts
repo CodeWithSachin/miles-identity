@@ -120,12 +120,19 @@ const tier2 = {
 	// below, not merely discouraged, whenever NODE_ENV=production.
 	DEV_OTP_BYPASS: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
 
-	// Gates password sign-in for accounts imported from Masterclass's legacy
-	// Django password hashes (step 9) that have not yet rehashed to argon2id on a
-	// successful login. Defaults closed: an imported user must use email/SMS OTP
-	// until this is explicitly turned on, regardless of environment. Once an
-	// account rehashes, it is no longer affected by this flag at all.
-	MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
+	// Gates password sign-in for accounts imported from any Django source's
+	// legacy `pbkdf2_sha256$…` hash (Masterclass, step 9; Miles One, step 10)
+	// that has not yet rehashed to argon2id on a successful login. One shared
+	// flag, not per-product: `passwordHasher.verify` never learns which product
+	// a hash came from (Better Auth's `verify` callback receives only
+	// `{ hash, password }`), and the property this flag actually guards —
+	// "is our hand-rolled PBKDF2 verifier safe to trust in production" — is a
+	// fact about the verify code, not about the source product. Defaults
+	// closed: an imported user must use email/SMS OTP until this is explicitly
+	// turned on, regardless of environment. Once an account rehashes, it is no
+	// longer affected by this flag at all. LMS's bcrypt import needs no
+	// equivalent flag — `Bun.password.verify` already trusts bcrypt natively.
+	DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
 
 	SALESFORCE_INSTANCE_URL: httpUrl,
 	SALESFORCE_CLIENT_ID: nonEmpty,

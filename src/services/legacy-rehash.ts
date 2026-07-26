@@ -2,7 +2,7 @@
  * Rehash-on-login for step 9's Masterclass legacy import: the first successful
  * sign-in against an imported Django PBKDF2 hash upgrades it to argon2id and
  * clears `importedHashAlgo`, so the account is unaffected by
- * `MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED` from that point on
+ * `DJANGO_LEGACY_PASSWORD_LOGIN_ENABLED` from that point on
  * (docs/architecture-plan.md:482, prompts/009).
  *
  * Business logic only (AGENTS.md: services/ = logic, no Request/Response). The

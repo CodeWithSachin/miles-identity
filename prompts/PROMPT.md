@@ -42,7 +42,7 @@ Use @.agents/skills/security, @.agents/skills/postgres-migrations and @.agents/s
 Integrate Masterclass web as the first OIDC client, legacy login behind a flag.
 Use @.agents/skills/better-auth and @.agents/skills/security.
 
-# 10 — Legacy import and dedup
+# ✅ 10 — Legacy import and dedup
 Implement the legacy hash import, dedup passes and the merge procedure.
 Use @.agents/skills/alias-identity and @.agents/skills/postgres-migrations.
 
