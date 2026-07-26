@@ -6,13 +6,21 @@
  * is the ONE place `pg` is allowed (AGENTS.md tech-stack exception). Everything WE
  * write goes through `Bun.sql` in `src/db/` — two clients, one database, by design.
  *
- * Step 3 scope: email+password only. The OAuth provider, JWT, OTP, 2FA, admin and
- * SSO plugins are later roadmap steps — do not add them here.
+ * Step 5 adds passwordless sign-in via our first-party `aliasOtp` plugin (email +
+ * SMS OTP resolved through the alias table). The OAuth provider, JWT, 2FA, admin
+ * and SSO plugins remain later roadmap steps — do not add them here.
+ *
+ * We deliberately do NOT mount Better Auth's own `emailOTP`/`phoneNumber` plugins:
+ * they key on `user.email`/`user.phoneNumber` and bypass `user_identity`, so they
+ * cannot honour the alias model or the verified-only rule. See src/auth/alias-otp.ts.
  */
 
 import { betterAuth } from "better-auth";
 import { Pool } from "pg";
 import { getConfig } from "@/lib/config";
+import { aliasOtp } from "@/auth/alias-otp";
+import { sendEmailOtp } from "@/integrations/email";
+import { sendSmsOtp } from "@/integrations/sms";
 
 const config = getConfig();
 
@@ -50,6 +58,10 @@ export const auth = betterAuth({
     enabled: true,
     password: passwordHasher,
   },
+
+  // Passwordless sign-in wired to the alias resolver. Adds no Better Auth table —
+  // it reuses the existing `verification` store for OTP state. See alias-otp.ts.
+  plugins: [aliasOtp({ sendEmailOtp, sendSmsOtp })],
 
   // Server-controlled extensions to the `user` row. `input: false` means a client
   // cannot set them. Declared here so the Better-Auth-owned `user` table carries

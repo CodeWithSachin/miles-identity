@@ -18,16 +18,17 @@ import { findUserIdByVerifiedHandle } from "@/db/identity";
 export type ResolveResult = { methods: string[] };
 
 /**
- * The login methods the screen should offer for a handle. Derived from the
- * handle alone, so a hit and a miss produce byte-identical responses.
+ * The login methods the screen should offer for a handle. Derived from the handle
+ * TYPE alone — never from whether a user exists — so a hit and a miss for the same
+ * handle produce byte-identical responses. The caller already knows their own
+ * handle's type, so offering `email_otp` vs `sms_otp` discloses nothing.
  *
- * Today the only wired sign-in method is password (step 3), so this is constant.
- * ponytail: step 5 branches on `_parsed.type` to add "email_otp" (email) /
- * "sms_otp" (phone) — kept derived from the TYPE, never from a resolved user,
- * so the response never becomes an existence oracle.
+ * A phone handle gets SMS OTP, anything else (email, or an unclassifiable null)
+ * gets email OTP; password (step 3) is offered alongside either.
  */
-export function resolveHandle(_parsed: { type: IdentityType; value: string } | null): ResolveResult {
-  return { methods: ["password"] };
+export function resolveHandle(parsed: { type: IdentityType; value: string } | null): ResolveResult {
+  const otpMethod = parsed?.type === "phone" ? "sms_otp" : "email_otp";
+  return { methods: [otpMethod, "password"] };
 }
 
 /**

@@ -48,22 +48,31 @@ describe("POST /api/identity/resolve", () => {
     const res = await post(uniqueHandle());
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toBe("no-store");
-    expect(await res.json()).toEqual({ methods: ["password"] });
+    expect(await res.json()).toEqual({ methods: ["email_otp", "password"] });
   });
 
-  // SECURITY: the endpoint must not reveal whether a handle exists. The body is a
-  // pure function of the handle, so any two handles yield byte-identical output —
-  // an email, a phone, and an unclassifiable string are indistinguishable.
-  test("returns byte-identical bodies for different handles (no enumeration oracle)", async () => {
+  // SECURITY: the real anti-enumeration property is existence-INDEPENDENCE — the
+  // body is a pure function of the handle and never touches the database, so two
+  // DIFFERENT handles of the SAME type are byte-identical whether either exists.
+  // (Type does show through — email_otp vs sms_otp — but the caller typed their own
+  // handle, so its type is not a secret. An unclassifiable string falls back to the
+  // email shape, so it is indistinguishable from a real email.)
+  test("returns byte-identical bodies regardless of existence (no enumeration oracle)", async () => {
     const [a, b, c] = await Promise.all([
       post(uniqueHandle()),
-      post("9811100999"),
+      post(uniqueHandle()),
       post("nobody-unclassifiable"),
     ]);
     const [ba, bb, bc] = await Promise.all([a.text(), b.text(), c.text()]);
     expect(a.status).toBe(200);
     expect(ba).toBe(bb);
     expect(bb).toBe(bc);
+  });
+
+  test("a phone handle gets the sms_otp shape", async () => {
+    const res = await post("9811100999");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ methods: ["sms_otp", "password"] });
   });
 
   // SECURITY: rate limit per handle so the endpoint cannot be scanned.

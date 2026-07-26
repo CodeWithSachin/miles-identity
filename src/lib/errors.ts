@@ -58,6 +58,22 @@ export class MigrationError extends AppError {
   }
 }
 
+/**
+ * An outbound integration (SMS gateway, email provider, Salesforce) failed.
+ * `expose` stays false — a provider error body can carry account identifiers, and
+ * an OTP-send failure must not tell the caller whether a handle exists.
+ */
+export class IntegrationError extends AppError {
+  readonly code = "INTEGRATION_ERROR";
+  readonly httpStatus = 502;
+  readonly service: string;
+
+  constructor(service: string, detail: string, options?: { cause?: unknown }) {
+    super(`integration failed: ${service}: ${detail}`, options);
+    this.service = service;
+  }
+}
+
 /** A datastore or downstream service did not respond in time. */
 export class DependencyUnavailableError extends AppError {
   readonly code = "DEPENDENCY_UNAVAILABLE";

@@ -25,6 +25,7 @@ beforeAll(async () => {
   db = await createTestSchema();
   await insertUser(db.sql, USER);
   await seedIdentity("email", "known@example.com", true);
+  await seedIdentity("email", "secondary@example.com", true); // a SECOND verified handle on the same user
   await seedIdentity("email", "pending@example.com", false); // unverified alias
   await seedIdentity("phone", "+919811100777", true);
 });
@@ -36,6 +37,13 @@ afterAll(async () => {
 describe("resolveVerifiedUser", () => {
   test("resolves a verified email handle to its user", async () => {
     expect(await resolveVerifiedUser({ type: "email", value: "known@example.com" }, db.sql)).toBe(USER);
+  });
+
+  // The alias-model property OTP sign-in rests on: a SECONDARY verified handle
+  // resolves to the SAME global user id as the primary. So a session minted from
+  // an OTP sent to the secondary handle is a session for the one global user.
+  test("resolves a secondary verified handle to the same global user", async () => {
+    expect(await resolveVerifiedUser({ type: "email", value: "secondary@example.com" }, db.sql)).toBe(USER);
   });
 
   // Normalise BEFORE the query: a differently-cased handle must still hit, because
@@ -63,11 +71,21 @@ describe("resolveVerifiedUser", () => {
 });
 
 describe("resolveHandle — the enumeration-safe offer", () => {
-  test("offers password for a classified handle", () => {
-    expect(resolveHandle({ type: "email", value: "known@example.com" })).toEqual({ methods: ["password"] });
+  // Derived from the handle TYPE, never from existence — so a hit and a miss for
+  // the same handle are byte-identical. email/null → email_otp; phone → sms_otp.
+  test("offers email_otp + password for an email handle", () => {
+    expect(resolveHandle({ type: "email", value: "known@example.com" })).toEqual({
+      methods: ["email_otp", "password"],
+    });
   });
 
-  test("offers the identical set for an unclassifiable (null) handle — no disclosure", () => {
-    expect(resolveHandle(null)).toEqual({ methods: ["password"] });
+  test("offers sms_otp + password for a phone handle", () => {
+    expect(resolveHandle({ type: "phone", value: "+919811100777" })).toEqual({
+      methods: ["sms_otp", "password"],
+    });
+  });
+
+  test("an unclassifiable (null) handle gets the email default — no disclosure", () => {
+    expect(resolveHandle(null)).toEqual({ methods: ["email_otp", "password"] });
   });
 });
