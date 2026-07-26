@@ -6,11 +6,11 @@ Use @.agents/skills/bun-native and @.agents/skills/security.
 Implement the database layer and data model.
 Use @.agents/skills/postgres-migrations and @.agents/skills/alias-identity.
 
-# 3 — Better Auth core  ← next. Also adds the deferred FKs to "user".
+# ✅ 3 — Better Auth core  ← next. Also adds the deferred FKs to "user".
 Implement the Better Auth core instance and its schema.
 Use @.agents/skills/better-auth, @.agents/skills/postgres-migrations and @.agents/skills/security.
 
-# 4 — Alias identity model. The core domain problem.
+# ✅ 4 — Alias identity model. The core domain problem.
 Implement the alias identity model and the resolve endpoint.
 Use @.agents/skills/alias-identity and @.agents/skills/security.
 
