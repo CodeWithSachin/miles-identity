@@ -12,6 +12,7 @@ import { closeRedis } from "@/lib/redis";
 import { healthResponse, readyHandler } from "@/routes/health";
 import { resolveRoute } from "@/routes/identity";
 import { adminAccessRoute } from "@/routes/admin/access";
+import { signInPage } from "@/routes/login";
 import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
 
@@ -28,6 +29,10 @@ const server = Bun.serve({
 
     "/health": healthResponse,
     "/ready": { GET: readyHandler },
+
+    // Hosted login page — the target of Better Auth's `loginPage: "/sign-in"`
+    // (src/auth.ts). Masterclass-themed static page; see src/routes/login.ts.
+    "/sign-in": signInPage,
 
     // The pre-login resolver. Enumeration-sensitive — see src/routes/identity.ts.
     "/api/identity/resolve": { POST: (req, server) => resolveRoute(req, server) },

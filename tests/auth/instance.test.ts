@@ -123,6 +123,18 @@ describe("auth instance wiring", () => {
     expect(fields?.salesforceContactId?.unique).toBe(true);
   });
 
+  // Step 9 (prompts/009): server-controlled, mirrors the other additionalFields.
+  test("declares importedHashAlgo as input:false, mapped to imported_hash_algo", () => {
+    const fields = auth.options.user?.additionalFields;
+    expect(fields?.importedHashAlgo?.input).toBe(false);
+    expect(fields?.importedHashAlgo?.fieldName).toBe("imported_hash_algo");
+  });
+
+  // The rehash-on-login hook (src/services/legacy-rehash.ts) is wired in.
+  test("registers an after hook for the legacy-password rehash", () => {
+    expect(typeof auth.options.hooks?.after).toBe("function");
+  });
+
   // Postgres is the source of truth so revocation is deleting a row — instant.
   test("stores sessions in the database", () => {
     expect(auth.options.session?.storeSessionInDatabase).toBe(true);

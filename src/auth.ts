@@ -22,10 +22,19 @@
  * We deliberately do NOT mount Better Auth's own `emailOTP`/`phoneNumber` plugins:
  * they key on `user.email`/`user.phoneNumber` and bypass `user_identity`, so they
  * cannot honour the alias model or the verified-only rule. See src/auth/alias-otp.ts.
+ *
+ * Step 9 (prompts/009) imports Masterclass's legacy Django password hashes
+ * (src/services/legacy-import.ts) rather than proxying to the legacy database at
+ * login time (docs/architecture-plan.md:463). `passwordHasher.verify` dispatches
+ * a `pbkdf2_sha256$…` hash to `verifyLegacyPassword`, gated by
+ * `MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED` (fail-closed default). `hooks.after`
+ * rehashes to argon2id on the first successful sign-in via
+ * `src/services/legacy-rehash.ts`.
  */
 
 import { betterAuth } from "better-auth";
 import { jwt, openAPI } from "better-auth/plugins";
+import { createAuthMiddleware, isAPIError } from "better-auth/api";
 import { oauthProvider } from "@better-auth/oauth-provider";
 import { Pool } from "pg";
 import { getConfig, requireLater } from "@/lib/config";
@@ -33,6 +42,8 @@ import { aliasOtp } from "@/auth/alias-otp";
 import { sendEmailOtp } from "@/integrations/email";
 import { sendSmsOtp } from "@/integrations/sms";
 import { DEV_OTP_CODE } from "@/services/otp";
+import { verifyLegacyPassword } from "@/lib/pbkdf2";
+import { rehashLegacyPasswordOnSignIn } from "@/services/legacy-rehash";
 
 const config = getConfig();
 
@@ -52,14 +63,27 @@ const getAccessTokenClaimsBuilder = async () => (await import("@/services/access
 
 /**
  * Password hashing wired to `Bun.password` (argon2id). `verify` reads the algorithm
- * out of the hash string, so an imported bcrypt hash verifies through the same call
- * (the Django PBKDF2 branch is step 9). Exported so the wiring is unit-testable
- * without standing up the database. See .agents/skills/better-auth.md.
+ * out of the hash string, so an imported bcrypt hash verifies through the same call.
+ * A Django `pbkdf2_sha256$…` hash (step 9's Masterclass legacy import) takes the
+ * dedicated branch — `Bun.password.verify` cannot auto-detect that format.
+ *
+ * The `MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED` gate lives HERE, not as a
+ * separate hook: while the flag is off, a PBKDF2 hash simply never verifies, so
+ * an imported-but-gated account fails exactly the same way Better Auth's own
+ * sign-in/email already fails a wrong password (BASE_ERROR_CODES.
+ * INVALID_EMAIL_OR_PASSWORD) — no new error, no new branch for an attacker to
+ * distinguish. See prompts/009 and .agents/skills/better-auth.md.
+ *
+ * Exported so the wiring is unit-testable without standing up the database.
  */
 export const passwordHasher = {
   hash: (password: string): Promise<string> => Bun.password.hash(password),
-  verify: ({ password, hash }: { password: string; hash: string }): Promise<boolean> =>
-    Bun.password.verify(password, hash),
+  verify: async ({ password, hash }: { password: string; hash: string }): Promise<boolean> => {
+    if (hash.startsWith("pbkdf2_sha256$")) {
+      return verifyLegacyPassword(password, hash, config.MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED ?? false);
+    }
+    return Bun.password.verify(password, hash);
+  },
 };
 
 /**
@@ -173,7 +197,43 @@ export const auth = betterAuth({
         input: false,
         fieldName: "merged_into_user_id",
       },
+      // Set by the step-9 legacy import (src/services/legacy-import.ts) to the
+      // source format ("django_pbkdf2") of an imported, not-yet-rehashed
+      // password. Cleared by the rehash-on-login `hooks.after` below on the
+      // first successful sign-in. Null for every account never imported.
+      importedHashAlgo: {
+        type: "string",
+        required: false,
+        input: false,
+        fieldName: "imported_hash_algo",
+      },
     },
+  },
+
+  // Rehash-on-login for step 9's legacy import: the first successful sign-in
+  // against an imported PBKDF2 hash upgrades the stored hash to argon2id and
+  // clears importedHashAlgo, so the account is unaffected by
+  // MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED from that point on. Only ever
+  // runs after a REAL verified success — never on a failed or rejected
+  // sign-in. See prompts/009.
+  hooks: {
+    after: createAuthMiddleware(async (ctx) => {
+      if (ctx.path !== "/sign-in/email") return;
+
+      const returned = ctx.context.returned;
+      if (returned === undefined || isAPIError(returned)) return; // failed sign-in: never rehash
+
+      const email = ctx.body?.email;
+      const password = ctx.body?.password;
+      if (typeof email !== "string" || typeof password !== "string") return;
+
+      await rehashLegacyPasswordOnSignIn(email, password, {
+        findUserByEmail: (e) => ctx.context.internalAdapter.findUserByEmail(e, { includeAccounts: true }),
+        updateAccount: (id, data) => ctx.context.internalAdapter.updateAccount(id, data),
+        updateUser: (id, data) => ctx.context.internalAdapter.updateUser(id, data),
+        hashPassword: passwordHasher.hash,
+      });
+    }),
   },
 
   // Postgres stays the source of truth so revocation is deleting a row — instant.

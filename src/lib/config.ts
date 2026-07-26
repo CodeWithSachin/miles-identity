@@ -120,6 +120,13 @@ const tier2 = {
 	// below, not merely discouraged, whenever NODE_ENV=production.
 	DEV_OTP_BYPASS: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
 
+	// Gates password sign-in for accounts imported from Masterclass's legacy
+	// Django password hashes (step 9) that have not yet rehashed to argon2id on a
+	// successful login. Defaults closed: an imported user must use email/SMS OTP
+	// until this is explicitly turned on, regardless of environment. Once an
+	// account rehashes, it is no longer affected by this flag at all.
+	MASTERCLASS_LEGACY_PASSWORD_LOGIN_ENABLED: z.enum(["true", "false"]).transform((v) => v === "true").default(false),
+
 	SALESFORCE_INSTANCE_URL: httpUrl,
 	SALESFORCE_CLIENT_ID: nonEmpty,
 	SALESFORCE_CLIENT_SECRET: nonEmpty,

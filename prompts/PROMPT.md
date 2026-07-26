@@ -38,7 +38,7 @@ Use @.agents/skills/scalar-api-docs, @.agents/skills/security and @.agents/skill
 Implement product access RBAC and the admin grant/revoke endpoints.
 Use @.agents/skills/security, @.agents/skills/postgres-migrations and @.agents/skills/scalar-api-docs.
 
-# 9 — First product integration
+# ✅ 9 — First product integration
 Integrate Masterclass web as the first OIDC client, legacy login behind a flag.
 Use @.agents/skills/better-auth and @.agents/skills/security.
 
