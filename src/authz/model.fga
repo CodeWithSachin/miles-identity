@@ -1,0 +1,34 @@
+model
+  schema 1.1
+
+type user
+
+type vendor
+  relations
+    define admin: [user]
+    define staff: [user] or admin
+
+type package
+  relations
+    define subscriber: [user with active_subscription]
+
+type cohort
+  relations
+    define member: [user with active_enrolment]
+
+type course
+  relations
+    define owning_vendor: [vendor]
+    define in_package:    [package]
+    define in_cohort:     [cohort]
+    # union: direct/promo/admin override, package path, batch (cohort) path, vendor path
+    define viewer: [user with active_enrolment] or subscriber from in_package or member from in_cohort or staff from owning_vendor
+    define editor: admin from owning_vendor
+
+condition active_enrolment(current_time: timestamp, valid_from: timestamp, valid_until: timestamp) {
+  current_time >= valid_from && current_time < valid_until
+}
+
+condition active_subscription(current_time: timestamp, expires_at: timestamp) {
+  current_time < expires_at
+}

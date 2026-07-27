@@ -1,0 +1,153 @@
+name: Miles Identity — graph authorization model tests
+model_file: model.fga
+
+tests:
+  - name: direct grant within its validity window can view the course
+    tuples:
+      - user: user:anne
+        relation: viewer
+        object: course:101
+        condition:
+          name: active_enrolment
+          context:
+            valid_from: "2026-01-01T00:00:00Z"
+            valid_until: "2027-01-01T00:00:00Z"
+    check:
+      - user: user:anne
+        object: course:101
+        context:
+          current_time: "2026-06-01T00:00:00Z"
+        assertions:
+          viewer: true
+
+  - name: an expired enrolment cannot read the course
+    tuples:
+      - user: user:anne
+        relation: viewer
+        object: course:101
+        condition:
+          name: active_enrolment
+          context:
+            valid_from: "2025-01-01T00:00:00Z"
+            valid_until: "2025-06-01T00:00:00Z"
+    check:
+      - user: user:anne
+        object: course:101
+        context:
+          current_time: "2026-06-01T00:00:00Z"
+        assertions:
+          viewer: false
+
+  - name: package subscriber can view courses in that package
+    tuples:
+      - user: package:cma-prep
+        relation: in_package
+        object: course:101
+      - user: user:bob
+        relation: subscriber
+        object: package:cma-prep
+        condition:
+          name: active_subscription
+          context:
+            expires_at: "2027-01-01T00:00:00Z"
+    check:
+      - user: user:bob
+        object: course:101
+        context:
+          current_time: "2026-06-01T00:00:00Z"
+        assertions:
+          viewer: true
+
+  - name: a cohort member loses access when the cohort membership expires
+    tuples:
+      - user: cohort:batch-9
+        relation: in_cohort
+        object: course:101
+      - user: user:carol
+        relation: member
+        object: cohort:batch-9
+        condition:
+          name: active_enrolment
+          context:
+            valid_from: "2025-01-01T00:00:00Z"
+            valid_until: "2025-06-01T00:00:00Z"
+    check:
+      - user: user:carol
+        object: course:101
+        context:
+          current_time: "2026-06-01T00:00:00Z"
+        assertions:
+          viewer: false
+
+  - name: vendor staff can view the vendor's own course, but not another vendor's
+    tuples:
+      - user: vendor:acme
+        relation: owning_vendor
+        object: course:101
+      - user: vendor:other-co
+        relation: owning_vendor
+        object: course:202
+      - user: user:dave
+        relation: staff
+        object: vendor:acme
+    check:
+      - user: user:dave
+        object: course:101
+        assertions:
+          viewer: true
+      - user: user:dave
+        object: course:202
+        assertions:
+          viewer: false
+
+  - name: vendor A's staff cannot read vendor B's course even with matching cohort/package ids
+    tuples:
+      - user: vendor:acme
+        relation: owning_vendor
+        object: course:101
+      - user: vendor:other-co
+        relation: owning_vendor
+        object: course:202
+      - user: user:erin
+        relation: staff
+        object: vendor:other-co
+    check:
+      - user: user:erin
+        object: course:101
+        assertions:
+          viewer: false
+
+  - name: a vendor admin is implicitly staff and can view the vendor's course
+    tuples:
+      - user: vendor:acme
+        relation: owning_vendor
+        object: course:101
+      - user: user:frank
+        relation: admin
+        object: vendor:acme
+    check:
+      - user: user:frank
+        object: course:101
+        assertions:
+          viewer: true
+      - user: user:frank
+        object: vendor:acme
+        assertions:
+          editor: true
+
+  - name: a vendor admin cannot grant themselves editor rights on another vendor's course
+    tuples:
+      - user: vendor:acme
+        relation: owning_vendor
+        object: course:101
+      - user: vendor:other-co
+        relation: owning_vendor
+        object: course:202
+      - user: user:frank
+        relation: admin
+        object: vendor:acme
+    check:
+      - user: user:frank
+        object: course:202
+        assertions:
+          editor: false

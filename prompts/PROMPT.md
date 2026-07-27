@@ -50,7 +50,7 @@ Use @.agents/skills/alias-identity and @.agents/skills/postgres-migrations.
 Implement inbound vendor SSO with DNS domain verification and JIT provisioning.
 Use @.agents/skills/better-auth, @.agents/skills/security and @.agents/skills/scalar-api-docs.
 
-# 12 — Graph authorization (layer 2)
+# ✅ 12 — Graph authorization (layer 2)
 Implement the OpenFGA model, the outbox worker and shadow mode.
 Use @.agents/skills/openfga-authz and @.agents/skills/postgres-migrations.
 

@@ -22,6 +22,12 @@ import { signInPage } from "@/routes/login";
 import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
 
+// Graph authorization (roadmap step 11): outbox drain + shadow-mode
+// reconciliation. Side-effect imports only — each registers its own
+// Bun.cron schedule and is never reachable from an HTTP request.
+import "@/jobs/outbox-worker";
+import "@/jobs/shadow-reconciliation";
+
 // Fails fast and exits 1 on invalid configuration, before a port is bound.
 const config = loadConfigOrExit();
 

@@ -27,14 +27,16 @@
     "legacy-import": "bun run src/services/legacy-import.ts",
     "dedup:run": "bun run src/services/dedup.ts",
     "fga:model": "bun run src/authz/push-model.ts",
+    "fga:test-model": "fga model test --tests src/authz/model.fga.yaml",
     "audit": "bun audit --ignore=GHSA-p2fr-6hmx-4528",
     "check": "bun run typecheck && bun test && bun run audit"
   },
   "dependencies": {
-    "better-auth": "1.6.25",
     "@better-auth/oauth-provider": "1.6.25",
     "@better-auth/sso": "1.6.25",
     "@openfga/sdk": "0.9.6",
+    "@openfga/syntax-transformer": "0.2.2",
+    "better-auth": "1.6.25",
     "pg": "8.22.0",
     "zod": "4.4.3"
   },

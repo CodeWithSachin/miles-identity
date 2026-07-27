@@ -8,8 +8,32 @@
  */
 
 import { sql, type SQL } from "bun";
-import { newId } from "@/db/types";
-import type { ProductId, Role, UserProductAccessRow } from "@/db/types";
+import { newId, VENDOR_ROLES } from "@/db/types";
+import type { ProductId, Role, UserProductAccessRow, VendorRole } from "@/db/types";
+
+/** True for the only roles this repo currently syncs into OpenFGA tuples (vendor#admin/staff). */
+function isVendorScopedRole(role: Role): role is VendorRole {
+  return (VENDOR_ROLES as readonly string[]).includes(role);
+}
+
+/**
+ * The `vendor_access` outbox payload `src/authz/tuples.ts` parses. Written
+ * alongside the domain row, never separately (AGENTS.md: never write a tuple
+ * from a request handler — that is a dual write and it will drift).
+ * `null` when the row isn't one of the relations this repo syncs to OpenFGA.
+ *
+ * Returned as a plain object, not a `JSON.stringify`'d string — `Bun.sql`
+ * encodes an object parameter as jsonb correctly by itself; stringifying it
+ * first double-encodes it into a jsonb *string* scalar instead of an object,
+ * which `payload->>'key'` (and `authz/tuples.ts`'s zod parse) would then see
+ * as `null`/a type error.
+ */
+function vendorAccessOutboxPayload(
+  row: Pick<UserProductAccessRow, "user_id" | "vendor_id" | "role">,
+): Record<string, unknown> | null {
+  if (!isVendorScopedRole(row.role) || row.vendor_id === null) return null;
+  return { userId: row.user_id, vendorId: row.vendor_id, role: row.role };
+}
 
 export type ProductAccessClaim = {
   product_id: ProductId;
@@ -59,18 +83,30 @@ export async function grantAccess(
   input: { userId: string; productId: ProductId; role: Role; vendorId: string | null; grantedBy: string },
   client: SQL = sql,
 ): Promise<UserProductAccessRow> {
-  const rows = (await client`
-    INSERT INTO user_product_access (id, user_id, product_id, role, vendor_id, status, granted_by, granted_at, revoked_at)
-    VALUES (${newId("access")}, ${input.userId}, ${input.productId}, ${input.role}, ${input.vendorId}, 'active', ${input.grantedBy}, now(), NULL)
-    ON CONFLICT (user_id, product_id, role) DO UPDATE SET
-      status = 'active',
-      vendor_id = EXCLUDED.vendor_id,
-      granted_by = EXCLUDED.granted_by,
-      granted_at = now(),
-      revoked_at = NULL
-    RETURNING *
-  `) as UserProductAccessRow[];
-  return rows[0]!;
+  return (await client.begin(async (tx) => {
+    const rows = (await tx`
+      INSERT INTO user_product_access (id, user_id, product_id, role, vendor_id, status, granted_by, granted_at, revoked_at)
+      VALUES (${newId("access")}, ${input.userId}, ${input.productId}, ${input.role}, ${input.vendorId}, 'active', ${input.grantedBy}, now(), NULL)
+      ON CONFLICT (user_id, product_id, role) DO UPDATE SET
+        status = 'active',
+        vendor_id = EXCLUDED.vendor_id,
+        granted_by = EXCLUDED.granted_by,
+        granted_at = now(),
+        revoked_at = NULL
+      RETURNING *
+    `) as UserProductAccessRow[];
+    const row = rows[0]!;
+
+    const payload = vendorAccessOutboxPayload(row);
+    if (payload !== null) {
+      await tx`
+        INSERT INTO outbox (aggregate, event_type, payload)
+        VALUES ('vendor_access', 'granted', ${payload})
+      `;
+    }
+
+    return row;
+  })) as UserProductAccessRow;
 }
 
 /**
@@ -82,11 +118,47 @@ export async function revokeAccess(
   input: { userId: string; productId: ProductId; role: Role },
   client: SQL = sql,
 ): Promise<UserProductAccessRow | null> {
-  const rows = (await client`
-    UPDATE user_product_access
-    SET status = 'revoked', revoked_at = now()
-    WHERE user_id = ${input.userId} AND product_id = ${input.productId} AND role = ${input.role} AND status = 'active'
-    RETURNING *
-  `) as UserProductAccessRow[];
-  return rows[0] ?? null;
+  return (await client.begin(async (tx) => {
+    const rows = (await tx`
+      UPDATE user_product_access
+      SET status = 'revoked', revoked_at = now()
+      WHERE user_id = ${input.userId} AND product_id = ${input.productId} AND role = ${input.role} AND status = 'active'
+      RETURNING *
+    `) as UserProductAccessRow[];
+    const row = rows[0] ?? null;
+    if (row === null) return null;
+
+    const payload = vendorAccessOutboxPayload(row);
+    if (payload !== null) {
+      await tx`
+        INSERT INTO outbox (aggregate, event_type, payload)
+        VALUES ('vendor_access', 'revoked', ${payload})
+      `;
+    }
+
+    return row;
+  })) as UserProductAccessRow | null;
+}
+
+/**
+ * Paginated read of every active, vendor-scoped access row — the shadow
+ * reconciliation job's input (`src/authz/shadow.ts`). Keyset, not `OFFSET`
+ * (postgres-migrations skill): ids are UUIDv7-based and lexically
+ * time-ordered, so plain `id > cursor` pagination is valid here, same as
+ * every other batch job in this codebase.
+ */
+export type VendorScopedAccessRow = { id: string; user_id: string; vendor_id: string; role: VendorRole };
+
+export async function listActiveVendorScopedAccess(
+  cursor: string,
+  limit: number,
+  client: SQL = sql,
+): Promise<VendorScopedAccessRow[]> {
+  return (await client`
+    SELECT id, user_id, vendor_id, role
+    FROM user_product_access
+    WHERE status = 'active' AND vendor_id IS NOT NULL AND id > ${cursor}
+    ORDER BY id
+    LIMIT ${limit}
+  `) as VendorScopedAccessRow[];
 }
