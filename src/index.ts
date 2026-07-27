@@ -18,6 +18,7 @@ import {
   registerVendorSsoProviderRoute,
   verifyVendorDomainRoute,
 } from "@/routes/admin/vendors";
+import { provisionRoute } from "@/routes/internal/provision";
 import { signInPage } from "@/routes/login";
 import { docsRoutes } from "@/routes/docs";
 import { auth } from "@/auth";
@@ -66,6 +67,11 @@ const server = Bun.serve({
     "/api/admin/vendors/:vendorId/disable": {
       POST: (req) => disableVendorRoute(req, req.params.vendorId),
     },
+
+    // Salesforce Lead-conversion callout (roadmap step 12). Network-allowlisted
+    // and HMAC-signed, never session-authed and never documented — see
+    // src/routes/internal/provision.ts.
+    "/api/internal/provision": { POST: (req) => provisionRoute(req) },
 
     // Better Auth owns everything under /api/auth. No handler of ours goes inside
     // this prefix (AGENTS.md API contracts). More-specific routes above still win.

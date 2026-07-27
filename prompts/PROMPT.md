@@ -54,7 +54,7 @@ Use @.agents/skills/better-auth, @.agents/skills/security and @.agents/skills/sc
 Implement the OpenFGA model, the outbox worker and shadow mode.
 Use @.agents/skills/openfga-authz and @.agents/skills/postgres-migrations.
 
-# 13 — Salesforce
+# ✅ 13 — Salesforce
 Implement Salesforce provisioning on Lead conversion and the back-reference sync.
 Use @.agents/skills/security, @.agents/skills/postgres-migrations and @.agents/skills/scalar-api-docs.
 
